@@ -1,0 +1,10 @@
+numpy
+pandas
+scikit-learn
+xgboost
+torch
+fastapi
+uvicorn
+pydantic
+requests
+python-dotenv

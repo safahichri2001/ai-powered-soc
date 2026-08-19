@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Machine Learning
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+
+# Data
+data/raw/*
+data/processed/*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+*.pem
+*.key
+credentials.json
+
+# Temporary
+tmp/
+temp/
