@@ -44,3 +44,12 @@ credentials.json
 # Temporary
 tmp/
 temp/
+
+# Vector databases / local stores
+chroma/
+qdrant_storage/
+*.db
+
+# Local secrets
+.env.*
+!.env.example
