@@ -49,6 +49,7 @@ temp/
 chroma/
 qdrant_storage/
 *.db
+test_qdrant_storage/
 
 # Local secrets
 .env.*
