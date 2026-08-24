@@ -2,28 +2,40 @@
 __pycache__/
 *.py[cod]
 *.pyo
+.pytest_cache/
 
 # Virtual environments
 venv/
 .venv/
 env/
 
-# Environment variables
+# Environment variables and local secrets
 .env
+.env.*
+!.env.example
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Machine Learning
+# Machine Learning artifacts
 *.pkl
 *.joblib
 *.pt
 *.pth
 *.onnx
 
-# Data
+# Local data
 data/raw/*
 data/processed/*
+
+# Vector databases / local stores
+chroma/
+qdrant_storage/
+test_qdrant_storage/
+test_rag_qdrant/
+test_security_attack_qdrant/
+*.db
+*.sqlite
 
 # IDE
 .vscode/
@@ -36,25 +48,11 @@ Thumbs.db
 # Logs
 *.log
 
-# Secrets
+# Secrets / credentials
 *.pem
 *.key
 credentials.json
 
-# Temporary
+# Temporary files
 tmp/
 temp/
-
-# Vector databases / local stores
-chroma/
-qdrant_storage/
-*.db
-test_qdrant_storage/
-
-# Local secrets
-.env.*
-!.env.example
-# Local test vector stores
-test_qdrant_storage/
-test_rag_qdrant/
-test_security_attack_qdrant/
