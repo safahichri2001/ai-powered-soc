@@ -54,3 +54,7 @@ test_qdrant_storage/
 # Local secrets
 .env.*
 !.env.example
+# Local test vector stores
+test_qdrant_storage/
+test_rag_qdrant/
+test_security_attack_qdrant/
