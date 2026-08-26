@@ -1,7 +1,10 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
+
+from agent.security.reference_attack_store import ReferenceAttackStore
 
 
 @dataclass(frozen=True)
@@ -14,24 +17,28 @@ class SemanticGuardResult:
 
 
 class SemanticGuard:
-    """Detect semantically similar prompt-injection attempts."""
+    """Detect prompt injections using semantic similarity."""
 
     def __init__(
         self,
         model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-        threshold: float = 0.75,
+        threshold: float = 0.40,
+        reference_dataset: str | Path = (
+            "data/security/prepared/reference.jsonl"
+        ),
     ) -> None:
         self.model = SentenceTransformer(model_name)
         self.threshold = threshold
 
-    def assess(
-        self,
-        text: str,
-        attack_examples: list[str],
-    ) -> SemanticGuardResult:
-        """Compare the input against known prompt-injection examples."""
+        self.reference_store = ReferenceAttackStore(
+            dataset_path=reference_dataset,
+            model=self.model,
+        )
 
-        if not text.strip():
+    def assess(self, text: str) -> SemanticGuardResult:
+        """Assess text against the reference attack corpus."""
+
+        if not text or not text.strip():
             return SemanticGuardResult(
                 decision="BLOCK",
                 risk_score=1.0,
@@ -44,18 +51,14 @@ class SemanticGuard:
             convert_to_tensor=True,
         )
 
-        example_embeddings = self.model.encode(
-            attack_examples,
-            normalize_embeddings=True,
-            convert_to_tensor=True,
-        )
-
         similarities = cos_sim(
             query_embedding,
-            example_embeddings,
+            self.reference_store.embeddings,
         )[0]
 
-        max_similarity = float(similarities.max().item())
+        max_similarity = float(
+            similarities.max().item()
+        )
 
         if max_similarity >= self.threshold:
             return SemanticGuardResult(

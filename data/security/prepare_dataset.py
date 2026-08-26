@@ -1,25 +1,30 @@
 import json
 import random
+from collections import Counter, defaultdict
 from pathlib import Path
-from collections import Counter
 
 
-DATA_DIR = Path(__file__).parent
-OUTPUT_DIR = DATA_DIR / "prepared"
+SECURITY_DIR = Path(__file__).parent
 
-ATTACK_FILE = DATA_DIR / "prompt_injection.jsonl"
-BENIGN_FILE = DATA_DIR / "benign_prompts.jsonl"
+INPUT_FILE = SECURITY_DIR / "prompt_injection_corpus.jsonl"
+OUTPUT_DIR = SECURITY_DIR / "prepared"
 
 RANDOM_SEED = 42
 
-# 60% reference, 20% validation, 20% test
-REFERENCE_RATIO = 0.60
-VALIDATION_RATIO = 0.20
-TEST_RATIO = 0.20
+REFERENCE_RATIO = 0.70
+VALIDATION_RATIO = 0.15
+TEST_RATIO = 0.15
+
+assert abs(
+    REFERENCE_RATIO + VALIDATION_RATIO + TEST_RATIO - 1.0
+) < 1e-9
 
 
 def load_jsonl(path: Path) -> list[dict]:
-    """Load JSONL records from a file."""
+    """Load records from a JSONL file."""
+
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset not found: {path}")
 
     records: list[dict] = []
 
@@ -42,70 +47,117 @@ def load_jsonl(path: Path) -> list[dict]:
     return records
 
 
-def validate_records(
-    records: list[dict],
-    expected_label: str,
-) -> None:
-    """Validate required fields and expected labels."""
+def validate_records(records: list[dict]) -> None:
+    """Validate the common dataset schema."""
 
-    required_fields = {"id", "text", "category", "label"}
+    required_fields = {
+        "id",
+        "text",
+        "category",
+        "label",
+        "source",
+        "source_id",
+    }
+
+    valid_labels = {"attack", "benign"}
 
     for record in records:
         missing = required_fields - record.keys()
 
         if missing:
             raise ValueError(
-                f"Missing fields in record {record.get('id')}: {missing}"
+                f"Record {record.get('id')} is missing: {sorted(missing)}"
             )
 
         if not str(record["text"]).strip():
             raise ValueError(
-                f"Empty text in record {record['id']}"
+                f"Record {record['id']} contains empty text."
             )
 
-        if record["label"] != expected_label:
+        if record["label"] not in valid_labels:
             raise ValueError(
-                f"Unexpected label in record {record['id']}: "
+                f"Invalid label in record {record['id']}: "
                 f"{record['label']}"
             )
 
 
-def remove_duplicates(records: list[dict]) -> list[dict]:
-    """Remove duplicate examples based on normalized text."""
+def deduplicate_records(records: list[dict]) -> list[dict]:
+    """Remove duplicate prompts after normalization."""
 
     seen: set[str] = set()
     unique_records: list[dict] = []
 
     for record in records:
-        normalized_text = " ".join(
-            str(record["text"]).lower().split()
+        normalized = " ".join(
+            str(record["text"])
+            .strip()
+            .lower()
+            .split()
         )
 
-        if normalized_text in seen:
+        if normalized in seen:
             continue
 
-        seen.add(normalized_text)
+        seen.add(normalized)
         unique_records.append(record)
 
     return unique_records
 
 
-def split_records(
+def stratified_split(
     records: list[dict],
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Split records into reference, validation, and test sets."""
+    """
+    Split records while preserving the attack/benign ratio.
 
-    shuffled = records.copy()
-    random.shuffle(shuffled)
+    Categories are kept for analysis, but are not used as mandatory
+    strata because some categories are too small to support a 60/20/20 split.
+    """
 
-    total = len(shuffled)
+    strata: dict[str, list[dict]] = defaultdict(list)
 
-    reference_end = int(total * REFERENCE_RATIO)
-    validation_end = reference_end + int(total * VALIDATION_RATIO)
+    for record in records:
+        strata[str(record["label"])].append(record)
 
-    reference = shuffled[:reference_end]
-    validation = shuffled[reference_end:validation_end]
-    test = shuffled[validation_end:]
+    reference: list[dict] = []
+    validation: list[dict] = []
+    test: list[dict] = []
+
+    for label, group in sorted(strata.items()):
+        random.shuffle(group)
+
+        total = len(group)
+
+        reference_count = round(total * REFERENCE_RATIO)
+        validation_count = round(total * VALIDATION_RATIO)
+
+        # Guarantee at least one test example.
+        if reference_count + validation_count >= total:
+            test_count = 1
+            validation_count = max(1, validation_count - 1)
+            reference_count = total - validation_count - test_count
+        else:
+            test_count = total - reference_count - validation_count
+
+        reference.extend(group[:reference_count])
+
+        validation.extend(
+            group[
+                reference_count:
+                reference_count + validation_count
+            ]
+        )
+
+        test.extend(
+            group[
+                reference_count + validation_count:
+                reference_count + validation_count + test_count
+            ]
+        )
+
+    random.shuffle(reference)
+    random.shuffle(validation)
+    random.shuffle(test)
 
     return reference, validation, test
 
@@ -131,52 +183,63 @@ def print_distribution(
     name: str,
     records: list[dict],
 ) -> None:
-    """Print category distribution."""
+    """Print label and category distributions."""
 
-    categories = Counter(
-        record["category"]
+    labels = Counter(
+        record["label"]
         for record in records
     )
 
-    print(f"\n{name}: {len(records)} examples")
+    categories = Counter(
+        (
+            record["label"],
+            record["category"],
+        )
+        for record in records
+    )
 
-    for category, count in sorted(categories.items()):
-        print(f"  {category}: {count}")
+    print(f"\n=== {name.upper()} ===")
+    print(f"Total: {len(records)}")
+
+    print("\nLabels:")
+    for label, count in sorted(labels.items()):
+        print(f"  {label}: {count}")
+
+    print("\nLabel + category:")
+    for (label, category), count in sorted(categories.items()):
+        print(
+            f"  {label:>6} | "
+            f"{category:<30} | {count}"
+        )
 
 
 def main() -> None:
+    """Prepare the final reference, validation, and test datasets."""
+
     random.seed(RANDOM_SEED)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    attacks = load_jsonl(ATTACK_FILE)
-    benign = load_jsonl(BENIGN_FILE)
-
-    validate_records(attacks, "attack")
-    validate_records(benign, "benign")
-
-    attacks = remove_duplicates(attacks)
-    benign = remove_duplicates(benign)
-
-    print("=== DATASET AFTER VALIDATION ===")
-    print(f"Attack examples: {len(attacks)}")
-    print(f"Benign examples: {len(benign)}")
-
-    attack_reference, attack_validation, attack_test = split_records(
-        attacks
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    benign_reference, benign_validation, benign_test = split_records(
-        benign
-    )
+    records = load_jsonl(INPUT_FILE)
 
-    reference = attack_reference + benign_reference
-    validation = attack_validation + benign_validation
-    test = attack_test + benign_test
+    print("=== INPUT DATASET ===")
+    print(f"Records loaded: {len(records)}")
 
-    random.shuffle(reference)
-    random.shuffle(validation)
-    random.shuffle(test)
+    validate_records(records)
+
+    before = len(records)
+
+    records = deduplicate_records(records)
+
+    after = len(records)
+
+    print(f"Duplicates removed: {before - after}")
+    print(f"Records after deduplication: {after}")
+
+    reference, validation, test = stratified_split(records)
 
     write_jsonl(
         reference,
@@ -193,14 +256,23 @@ def main() -> None:
         OUTPUT_DIR / "test.jsonl",
     )
 
-    print_distribution("REFERENCE", reference)
-    print_distribution("VALIDATION", validation)
-    print_distribution("TEST", test)
+    print_distribution("reference", reference)
+    print_distribution("validation", validation)
+    print_distribution("test", test)
 
-    print("\n=== OUTPUT ===")
-    print(f"Reference : {OUTPUT_DIR / 'reference.jsonl'}")
-    print(f"Validation: {OUTPUT_DIR / 'validation.jsonl'}")
-    print(f"Test      : {OUTPUT_DIR / 'test.jsonl'}")
+    print("\n=== OUTPUT FILES ===")
+    print(
+        f"Reference : "
+        f"{OUTPUT_DIR / 'reference.jsonl'}"
+    )
+    print(
+        f"Validation: "
+        f"{OUTPUT_DIR / 'validation.jsonl'}"
+    )
+    print(
+        f"Test      : "
+        f"{OUTPUT_DIR / 'test.jsonl'}"
+    )
 
 
 if __name__ == "__main__":
