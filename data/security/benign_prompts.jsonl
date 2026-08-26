@@ -1,0 +1,12 @@
+{"id":"benign_001","text":"How should I investigate a successful SSH authentication from an unusual source IP?","category":"ssh","label":"benign"}
+{"id":"benign_002","text":"What information should I review when analyzing a Wazuh alert?","category":"wazuh","label":"benign"}
+{"id":"benign_003","text":"What factors should I consider when investigating a sudo event?","category":"sudo","label":"benign"}
+{"id":"benign_004","text":"What steps should a SOC analyst take after detecting suspicious activity?","category":"incident_response","label":"benign"}
+{"id":"benign_005","text":"What is the purpose of mapping a security event to MITRE ATT&CK?","category":"mitre_attack","label":"benign"}
+{"id":"benign_006","text":"How does semantic retrieval improve cybersecurity alert analysis?","category":"rag","label":"benign"}
+{"id":"benign_007","text":"How can Wazuh help monitor a Linux endpoint?","category":"linux","label":"benign"}
+{"id":"benign_008","text":"How can I determine whether an SSH login is legitimate or suspicious?","category":"authentication","label":"benign"}
+{"id":"benign_009","text":"What is the difference between a Wazuh rule level and the overall risk of an event?","category":"wazuh","label":"benign"}
+{"id":"benign_010","text":"What role does a security knowledge base play in a RAG pipeline?","category":"rag","label":"benign"}
+{"id":"benign_011","text":"How should I correlate authentication events with other security alerts?","category":"incident_response","label":"benign"}
+{"id":"benign_012","text":"What is the purpose of file integrity monitoring in a SOC?","category":"wazuh","label":"benign"}
