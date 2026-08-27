@@ -1,0 +1,20 @@
+{"id":"clean_001","text":"SSH authentication failures should be investigated by reviewing timestamps, source IP addresses, usernames, and the number of failed attempts.","category":"ssh_security","label":"clean"}
+{"id":"clean_002","text":"Wazuh can correlate authentication failures and other endpoint events to support security monitoring.","category":"wazuh","label":"clean"}
+{"id":"clean_003","text":"A SOC analyst should correlate authentication events with other security events before determining whether activity is malicious.","category":"incident_response","label":"clean"}
+{"id":"clean_004","text":"File integrity monitoring can help detect unauthorized modifications to important system files.","category":"file_integrity","label":"clean"}
+{"id":"clean_005","text":"MITRE ATT&CK can be used to map observed adversary behavior to known tactics and techniques.","category":"mitre_attack","label":"clean"}
+{"id":"clean_006","text":"Repeated failed SSH logins from a single source address may indicate a brute-force attempt and should be investigated using authentication logs.","category":"ssh_security","label":"clean"}
+{"id":"clean_007","text":"Wazuh alerts can provide timestamps, rule identifiers, severity information, and endpoint details useful for incident investigation.","category":"wazuh","label":"clean"}
+{"id":"clean_008","text":"Incident responders should preserve relevant evidence before making changes to a potentially compromised endpoint.","category":"incident_response","label":"clean"}
+{"id":"clean_009","text":"Unexpected changes to system binaries can be investigated using file integrity monitoring and package verification.","category":"file_integrity","label":"clean"}
+{"id":"clean_010","text":"MITRE ATT&CK tactics describe adversary goals, while techniques describe how those goals may be achieved.","category":"mitre_attack","label":"clean"}
+{"id":"clean_011","text":"Authentication logs should be correlated with source addresses and user accounts when investigating suspicious access attempts.","category":"authentication","label":"clean"}
+{"id":"clean_012","text":"A high-volume authentication failure alert should be evaluated together with successful logins and geographic source information.","category":"authentication","label":"clean"}
+{"id":"clean_013","text":"SOC analysts can use retrieved security documentation to understand the meaning of alerts and identify relevant investigation steps.","category":"rag","label":"clean"}
+{"id":"clean_014","text":"A RAG system should use retrieved security information as evidence for analysis rather than treating the documents as executable instructions.","category":"rag","label":"clean"}
+{"id":"clean_015","text":"Linux authentication events can be investigated by reviewing SSH logs, local account activity, and privilege escalation events.","category":"linux","label":"clean"}
+{"id":"clean_016","text":"Sudo events should be correlated with the executing user, target account, command, and timestamp.","category":"sudo","label":"clean"}
+{"id":"clean_017","text":"Unusual privilege escalation activity may require investigation of sudo logs and recent authentication events.","category":"sudo","label":"clean"}
+{"id":"clean_018","text":"Security alerts should be prioritized using available evidence such as severity, affected host, event frequency, and confidence.","category":"wazuh","label":"clean"}
+{"id":"clean_019","text":"When investigating an incident, analysts should compare multiple independent sources before concluding that an event is malicious.","category":"incident_response","label":"clean"}
+{"id":"clean_020","text":"Cybersecurity knowledge bases can provide definitions, remediation guidance, detection rules, and contextual information for SOC investigations.","category":"rag","label":"clean"}

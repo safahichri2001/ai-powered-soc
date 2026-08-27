@@ -2,6 +2,7 @@ from pathlib import Path
 
 from agent.llm.ollama_client import OllamaClient
 from agent.security.input_guard import InputGuard
+from agent.security.rag_context_guard import RAGContextGuard
 from agent.security.semantic_guard import SemanticGuard
 from rag.embeddings.embedder import EmbeddingModel
 from rag.ingestion.chunker import chunk_documents
@@ -14,7 +15,7 @@ from rag.retrieval.vector_store import LocalVectorStore
 def build_test_pipeline(
     collection_name: str,
 ) -> RAGPipeline:
-    """Build a RAG pipeline for integration tests."""
+    """Build a secured RAG pipeline for integration tests."""
 
     documents = load_documents(
         Path("rag/knowledge/documents")
@@ -40,7 +41,7 @@ def build_test_pipeline(
 
     store.upsert(
         chunks,
-        embeddings,
+        embeddings
     )
 
     retriever = Retriever(
@@ -54,11 +55,14 @@ def build_test_pipeline(
         ),
         input_guard=InputGuard(),
         semantic_guard=SemanticGuard(),
+        rag_context_guard=RAGContextGuard(
+            threshold=0.56,
+        ),
     )
 
 
 def test_rag_pipeline_allows_benign_query() -> None:
-    """A legitimate SOC query should pass both security layers."""
+    """A legitimate SOC query should pass all security layers."""
 
     pipeline = build_test_pipeline(
         "test_rag_hybrid_benign"
@@ -76,6 +80,9 @@ def test_rag_pipeline_allows_benign_query() -> None:
 
     assert result["semantic_guard_decision"] == "ALLOW"
     assert result["semantic_guard_risk_score"] < 0.40
+
+    assert result["rag_context_guard_decision"] == "ALLOW"
+    assert result["rag_context_guard_risk_score"] < 0.56
 
     assert result["retrieved_results"]
     assert result["context"]
@@ -101,12 +108,17 @@ def test_rag_pipeline_blocks_regex_prompt_injection() -> None:
 
     assert result["semantic_guard_decision"] == "NOT_RUN"
 
+    assert result["rag_context_guard_decision"] == "NOT_RUN"
+
     assert result["retrieved_results"] == []
     assert result["context"] == ""
 
 
 def test_rag_pipeline_blocks_semantic_prompt_injection() -> None:
-    """A reformulated injection should bypass Regex but be blocked semantically."""
+    """
+    A reformulated injection should bypass the lexical
+    guard but be blocked by the semantic input guard.
+    """
 
     pipeline = build_test_pipeline(
         "test_rag_semantic_guard"
@@ -127,6 +139,8 @@ def test_rag_pipeline_blocks_semantic_prompt_injection() -> None:
 
     assert result["semantic_guard_decision"] == "BLOCK"
     assert result["semantic_guard_risk_score"] >= 0.40
+
+    assert result["rag_context_guard_decision"] == "NOT_RUN"
 
     assert result["retrieved_results"] == []
     assert result["context"] == ""

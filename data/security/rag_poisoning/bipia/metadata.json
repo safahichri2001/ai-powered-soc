@@ -1,0 +1,19 @@
+{
+  "source": "BIPIA",
+  "source_split": "train",
+  "seed": 42,
+  "paired": true,
+  "total_pairs": 100,
+  "clean_records": 100,
+  "poisoned_records": 100,
+  "scenarios": {
+    "email": 50,
+    "code": 50
+  },
+  "positions": {
+    "start": 34,
+    "middle": 33,
+    "end": 33
+  },
+  "note": "Each clean context has exactly one poisoned partner. The task/query remains identical."
+}
