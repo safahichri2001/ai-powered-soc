@@ -391,4 +391,62 @@ TOOL_RISK_PATTERNS: tuple[
         0.65,
         "sensitive_data",
     ),
+
+    # --------------------------------------------------------
+    # SOC operational tools (this project's own tool surface)
+    # --------------------------------------------------------
+
+    (
+        r"WazuhIsolateAgent",
+        0.85,
+        "administrative",
+    ),
+
+    (
+        r"FirewallAllowDomain",
+        0.85,
+        "administrative",
+    ),
+
+    (
+        r"FirewallBlockIndicator",
+        0.60,
+        "administrative",
+    ),
+
+    (
+        r"UserAccountDisable",
+        0.85,
+        "credential_security",
+    ),
+
+    (
+        r"UserAccountResetPassword",
+        0.80,
+        "credential_security",
+    ),
+
+    (
+        r"CaseManagementCloseAlert",
+        0.75,
+        "data_manipulation",
+    ),
+
+    (
+        r"WazuhSearchAlerts",
+        0.20,
+        "data_access",
+    ),
+
+    (
+        r"WazuhGetAgentInfo",
+        0.20,
+        "data_access",
+    ),
+
+    (
+        r"ThreatIntelLookupIP",
+        0.20,
+        "data_access",
+    ),
 )
