@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import re
 
+from agent.security.text_normalizer import normalize_for_detection
+
 
 @dataclass(frozen=True)
 class GuardResult:
@@ -48,7 +50,7 @@ class InputGuard:
         (
             re.compile(
                 r"\b(disregard|ignore|override|replace)\b.{0,60}\b"
-                r"(previous|current|provided|existing)\s+"
+                r"(previous|current|provided|existing|security)\s+"
                 r"(instructions?|context|rules?|policy)\b",
                 re.IGNORECASE,
             ),
@@ -90,13 +92,17 @@ class InputGuard:
                 reason="empty_input",
             )
 
-        for pattern, score in self._PATTERNS:
-            if pattern.search(text):
-                return GuardResult(
-                    decision="BLOCK",
-                    risk_score=score,
-                    reason="prompt_injection_detected",
-                )
+        normalized = normalize_for_detection(text)
+        candidates = (text,) if normalized == text else (text, normalized)
+
+        for candidate in candidates:
+            for pattern, score in self._PATTERNS:
+                if pattern.search(candidate):
+                    return GuardResult(
+                        decision="BLOCK",
+                        risk_score=score,
+                        reason="prompt_injection_detected",
+                    )
 
         return GuardResult(
             decision="ALLOW",

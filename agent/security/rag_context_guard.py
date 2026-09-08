@@ -7,6 +7,7 @@ from sentence_transformers.util import cos_sim
 from agent.security.bipia_attack_store import (
     BIPIAAttackStore,
 )
+from agent.security.text_normalizer import normalize_for_detection
 
 
 @dataclass(frozen=True)
@@ -129,13 +130,24 @@ class RAGContextGuard:
         self,
         context: str,
     ) -> str | None:
-        """Return the first matching explicit rule."""
+        """
+        Return the first matching explicit rule, checked against
+        both the text as given and its normalized (leetspeak/
+        homoglyph-reversed) form -- see
+        agent/security/text_normalizer.py.
+        """
 
-        for pattern in self.compiled_patterns:
-            match = pattern.search(context)
+        normalized = normalize_for_detection(context)
+        candidates = (
+            (context,) if normalized == context else (context, normalized)
+        )
 
-            if match:
-                return match.group(0)
+        for candidate in candidates:
+            for pattern in self.compiled_patterns:
+                match = pattern.search(candidate)
+
+                if match:
+                    return match.group(0)
 
         return None
 
@@ -201,8 +213,25 @@ class RAGContextGuard:
             clean_context
         )
 
+        # Each segment is embedded as-is, plus a normalized
+        # (leetspeak/homoglyph-reversed) variant when it differs --
+        # both are checked, but a match on the normalized variant
+        # still reports back the original, readable segment.
+        embed_texts: list[str] = []
+        embed_text_sources: list[str] = []
+
+        for segment in segments:
+            embed_texts.append(segment)
+            embed_text_sources.append(segment)
+
+            normalized_segment = normalize_for_detection(segment)
+
+            if normalized_segment != segment:
+                embed_texts.append(normalized_segment)
+                embed_text_sources.append(segment)
+
         segment_embeddings = self.model.encode(
-            segments,
+            embed_texts,
             normalize_embeddings=True,
             convert_to_tensor=True,
         )
@@ -223,7 +252,7 @@ class RAGContextGuard:
 
         attack_count = self.attack_store.size
 
-        segment_index = (
+        embed_text_index = (
             max_position // attack_count
         )
 
@@ -231,8 +260,8 @@ class RAGContextGuard:
             max_position % attack_count
         )
 
-        matched_segment = segments[
-            segment_index
+        matched_segment = embed_text_sources[
+            embed_text_index
         ]
 
         matched_attack = (

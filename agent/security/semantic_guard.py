@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
 
 from agent.security.reference_attack_store import ReferenceAttackStore
+from agent.security.text_normalizer import normalize_for_detection
 
 
 @dataclass(frozen=True)
@@ -45,16 +46,19 @@ class SemanticGuard:
                 reason="empty_input",
             )
 
-        query_embedding = self.model.encode(
-            text,
+        normalized = normalize_for_detection(text)
+        candidates = [text] if normalized == text else [text, normalized]
+
+        query_embeddings = self.model.encode(
+            candidates,
             normalize_embeddings=True,
             convert_to_tensor=True,
         )
 
         similarities = cos_sim(
-            query_embedding,
+            query_embeddings,
             self.reference_store.embeddings,
-        )[0]
+        )
 
         max_similarity = float(
             similarities.max().item()

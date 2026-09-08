@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from agent.security.text_normalizer import normalize_for_detection
 from agent.security.tool_misuse_rules import (
     ACTION_PATTERNS,
     TOOL_RISK_PATTERNS,
@@ -98,6 +99,13 @@ class ToolMisuseGuard:
             user_instruction
         )
 
+        # Detection-only candidate (leetspeak/homoglyph/zero-width
+        # reversed) checked ALONGSIDE the original, never replacing
+        # it -- see agent/security/text_normalizer.py. Normalization
+        # can only add matchable signal, never remove it, so this is
+        # a strict superset of what `instruction` alone would catch.
+        detection_instruction = normalize_for_detection(instruction)
+
         tool_parameters = (
             tool_parameters or {}
         )
@@ -127,10 +135,10 @@ class ToolMisuseGuard:
         # 1. Explicit action detection
         # -----------------------------------------------------
 
-        action_score, action_category = (
-            self._detect_actions(
-                instruction
-            )
+        action_score, action_category = self._best_detection(
+            self._detect_actions,
+            instruction,
+            detection_instruction,
         )
 
         # -----------------------------------------------------
@@ -140,18 +148,20 @@ class ToolMisuseGuard:
         (
             semantic_intent_score,
             semantic_intent_category,
-        ) = self._detect_semantic_intent(
-            instruction
+        ) = self._best_detection(
+            self._detect_semantic_intent,
+            instruction,
+            detection_instruction,
         )
 
         # -----------------------------------------------------
         # 3. Explicit attack detection
         # -----------------------------------------------------
 
-        explicit_score, explicit_category = (
-            self._detect_explicit_attack(
-                instruction
-            )
+        explicit_score, explicit_category = self._best_detection(
+            self._detect_explicit_attack,
+            instruction,
+            detection_instruction,
         )
 
         # -----------------------------------------------------
@@ -170,6 +180,8 @@ class ToolMisuseGuard:
 
         if self._is_data_exfiltration(
             instruction
+        ) or self._is_data_exfiltration(
+            detection_instruction
         ):
 
             return self._block_result(
@@ -183,11 +195,15 @@ class ToolMisuseGuard:
         # 6. Critical tool + action
         # -----------------------------------------------------
 
-        critical_score = (
+        critical_score = max(
             self._critical_tool_action_score(
                 instruction=instruction,
                 tools=normalized_tools,
-            )
+            ),
+            self._critical_tool_action_score(
+                instruction=detection_instruction,
+                tools=normalized_tools,
+            ),
         )
 
         if critical_score >= self.threshold:
@@ -231,7 +247,7 @@ class ToolMisuseGuard:
             explicit_category=explicit_category,
             semantic_intent_category=semantic_intent_category,
             tool_category=tool_category,
-            instruction=instruction,
+            instruction=detection_instruction,
             tools=normalized_tools,
         )
 
@@ -273,6 +289,43 @@ class ToolMisuseGuard:
         )
 
     # =========================================================
+    # EVASION-RESISTANT DETECTION
+    # =========================================================
+
+    @staticmethod
+    def _best_detection(
+        detect_fn,
+        instruction: str,
+        detection_instruction: str,
+    ) -> tuple[float, str | None]:
+        """
+        Run a (score, category) detector against both the original
+        instruction and its normalized (leetspeak/homoglyph-reversed)
+        form, keeping whichever scores higher. Guards against a
+        disguised trigger word (e.g. "unl0ck") producing zero signal
+        just because it doesn't literally contain the plain-ASCII
+        word a pattern is looking for.
+        """
+
+        candidates = (
+            (instruction,)
+            if detection_instruction == instruction
+            else (instruction, detection_instruction)
+        )
+
+        best_score = 0.0
+        best_category: str | None = None
+
+        for candidate in candidates:
+            score, category = detect_fn(candidate)
+
+            if score > best_score:
+                best_score = score
+                best_category = category
+
+        return best_score, best_category
+
+    # =========================================================
     # SEMANTIC-LIKE INTENT DETECTION
     # =========================================================
 
@@ -299,9 +352,9 @@ class ToolMisuseGuard:
 
             "physical": (
                 r"\b("
-                r"unlock|"
+                r"unlock\w*|"
                 r"open\s+(the\s+)?(front\s+)?door|"
-                r"open\s+(the\s+)?entrance|"
+                r"open\s+(the\s+)?(front\s+)?entrance|"
                 r"give\s+me\s+access\s+to|"
                 r"give\s+me\s+access|"
                 r"let\s+me\s+in|"
@@ -311,7 +364,8 @@ class ToolMisuseGuard:
                 r"cannot\s+get\s+in|"
                 r"can't\s+get\s+in|"
                 r"unable\s+to\s+enter|"
-                r"allow\s+me\s+inside"
+                r"allow\s+me\s+inside|"
+                r"emergency\s+responders?\b.{0,20}\bsent"
                 r")\b",
             ),
 
@@ -355,7 +409,9 @@ class ToolMisuseGuard:
                 r"purchase\s+.*crypto|"
                 r"acquire\s+.*crypto|"
                 r"convert\s+.*crypto|"
-                r"exchange\s+.*crypto"
+                r"exchange\s+.*crypto|"
+                r"withdrawal|"
+                r"payment\b.{0,30}\bcomplet\w*"
                 r")\b",
             ),
 
@@ -465,7 +521,8 @@ class ToolMisuseGuard:
                 r"cancel\s+.*shipment|"
                 r"cancel\s+.*delivery|"
                 r"redirect\s+.*shipment|"
-                r"redirect\s+.*package"
+                r"redirect\s+.*package|"
+                r"go\s+to\s+(the\s+)?(alternate|different|another|new)\s+destination"
                 r")\b",
             ),
 
