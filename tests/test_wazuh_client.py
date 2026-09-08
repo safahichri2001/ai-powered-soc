@@ -170,7 +170,7 @@ def test_connection_failure_raises_wazuh_client_error():
         requests.Session,
         "post",
         side_effect=requests.ConnectionError("no route to host"),
-    ):
+    ), patch("agent.integrations.wazuh_client.time.sleep"):
         with pytest.raises(WazuhClientError, match="Unable to authenticate"):
             client.get_agent("001")
 
@@ -231,3 +231,115 @@ def test_search_alerts_with_no_query_uses_match_all():
 
     _, kwargs = mock_post.call_args
     assert kwargs["json"]["query"] == {"match_all": {}}
+
+
+def test_search_alerts_with_since_only_uses_range_filter():
+    config = WazuhConfig("https://10.0.0.10:9200", "admin", "admin", False)
+    client = WazuhIndexerClient(config=config)
+
+    search_response = _response({"hits": {"hits": []}})
+
+    with patch.object(
+        requests.Session, "post", return_value=search_response
+    ) as mock_post:
+        client.search_alerts(since="2026-09-08T10:00:00Z", ascending=True)
+
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["query"] == {
+        "range": {"timestamp": {"gt": "2026-09-08T10:00:00Z"}}
+    }
+    assert kwargs["json"]["sort"] == [{"timestamp": {"order": "asc"}}]
+
+
+def test_search_alerts_with_query_and_since_combines_with_bool_must():
+    config = WazuhConfig("https://10.0.0.10:9200", "admin", "admin", False)
+    client = WazuhIndexerClient(config=config)
+
+    search_response = _response({"hits": {"hits": []}})
+
+    with patch.object(
+        requests.Session, "post", return_value=search_response
+    ) as mock_post:
+        client.search_alerts(
+            query="agent.name:Kali", since="2026-09-08T10:00:00Z"
+        )
+
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["query"] == {
+        "bool": {
+            "must": [
+                {"query_string": {"query": "agent.name:Kali"}},
+                {"range": {"timestamp": {"gt": "2026-09-08T10:00:00Z"}}},
+            ]
+        }
+    }
+    # ascending defaults to False when not explicitly requested
+    assert kwargs["json"]["sort"] == [{"timestamp": {"order": "desc"}}]
+
+
+# ============================================================
+# Connection retry
+# ============================================================
+
+
+def test_search_alerts_retries_once_after_transient_connection_error():
+    config = WazuhConfig("https://10.0.0.10:9200", "admin", "admin", False)
+    client = WazuhIndexerClient(config=config)
+
+    search_response = _response({"hits": {"hits": []}})
+
+    with patch.object(
+        requests.Session,
+        "post",
+        side_effect=[
+            requests.exceptions.ConnectionError("connection reset"),
+            search_response,
+        ],
+    ) as mock_post, patch("agent.integrations.wazuh_client.time.sleep"):
+        results = client.search_alerts()
+
+    assert results == []
+    assert mock_post.call_count == 2
+
+
+def test_search_alerts_gives_up_after_max_retries():
+    config = WazuhConfig("https://10.0.0.10:9200", "admin", "admin", False)
+    client = WazuhIndexerClient(config=config)
+
+    with patch.object(
+        requests.Session,
+        "post",
+        side_effect=requests.exceptions.ConnectionError("connection reset"),
+    ) as mock_post, patch("agent.integrations.wazuh_client.time.sleep"):
+        with pytest.raises(WazuhClientError, match="Wazuh Indexer search failed"):
+            client.search_alerts()
+
+    # Initial attempt + 2 retries = 3 total.
+    assert mock_post.call_count == 3
+
+
+def test_get_agent_retries_once_after_transient_connection_error():
+    config = WazuhConfig("https://10.0.0.10:55000", "user", "pass", False)
+    client = WazuhManagerClient(config=config)
+
+    auth_response = _response({"data": {"token": "jwt-token"}})
+    agents_response = _response(
+        {"data": {"affected_items": [{"id": "001", "name": "kali"}]}}
+    )
+
+    with patch.object(
+        requests.Session, "post", return_value=auth_response
+    ), patch.object(
+        requests.Session,
+        "request",
+        side_effect=[
+            requests.exceptions.ConnectionError("connection reset"),
+            agents_response,
+        ],
+    ) as mock_request, patch(
+        "agent.integrations.wazuh_client.time.sleep"
+    ):
+        agent = client.get_agent("001")
+
+    assert agent["name"] == "kali"
+    assert mock_request.call_count == 2

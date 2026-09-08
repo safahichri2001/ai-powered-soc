@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import requests
 import urllib3
@@ -17,6 +17,35 @@ load_dotenv()
 
 class WazuhClientError(RuntimeError):
     """Raised when a Wazuh API call cannot be completed."""
+
+
+def _with_connection_retry(
+    send: Callable[[], requests.Response],
+    max_retries: int = 2,
+    backoff_seconds: float = 1.0,
+) -> requests.Response:
+    """
+    Retry a request on transient connection failures (a reset/
+    aborted keep-alive connection, observed repeatedly against the
+    lab's Indexer -- always succeeding on the very next attempt),
+    but never on an HTTP error response, which is a real failure
+    worth surfacing immediately rather than retrying.
+    """
+
+    last_exc: requests.exceptions.ConnectionError | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            return send()
+
+        except requests.exceptions.ConnectionError as exc:
+            last_exc = exc
+
+            if attempt < max_retries:
+                time.sleep(backoff_seconds * (attempt + 1))
+
+    assert last_exc is not None
+    raise last_exc
 
 
 @dataclass(frozen=True)
@@ -74,11 +103,13 @@ class WazuhManagerClient:
         self.config.require_configured("Wazuh Manager API")
 
         try:
-            response = self._session.post(
-                f"{self.config.base_url}/security/user/authenticate",
-                auth=(self.config.username, self.config.password),
-                verify=self.config.verify_ssl,
-                timeout=10,
+            response = _with_connection_retry(
+                lambda: self._session.post(
+                    f"{self.config.base_url}/security/user/authenticate",
+                    auth=(self.config.username, self.config.password),
+                    verify=self.config.verify_ssl,
+                    timeout=10,
+                )
             )
             response.raise_for_status()
 
@@ -124,12 +155,12 @@ class WazuhManagerClient:
             )
 
         try:
-            response = send(token)
+            response = _with_connection_retry(lambda: send(token))
 
             if response.status_code == 401:
                 # Token expired/invalidated server-side -- refresh once.
                 token = self._authenticate()
-                response = send(token)
+                response = _with_connection_retry(lambda: send(token))
 
             response.raise_for_status()
 
@@ -179,26 +210,56 @@ class WazuhIndexerClient:
         query: str = "",
         limit: int = 10,
         index_pattern: str = "wazuh-alerts-*",
+        since: str | None = None,
+        ascending: bool = False,
     ) -> list[dict[str, Any]]:
+        """
+        Search alerts. `since` (an ISO8601 timestamp) restricts
+        results to alerts strictly after it, for watermark-based
+        polling -- pass `ascending=True` alongside it so results
+        come back oldest-first and a caller can safely advance its
+        watermark to the last item returned.
+
+        Known limitation: filtering is a plain `timestamp > since`
+        range, not a compound (timestamp, id) cursor, so two alerts
+        sharing the exact same timestamp at a page boundary could
+        in principle be split across polls. Not addressed here.
+        """
+
         self.config.require_configured("Wazuh Indexer")
+
+        filters: list[dict[str, Any]] = []
+
+        if query:
+            filters.append({"query_string": {"query": query}})
+
+        if since:
+            filters.append({"range": {"timestamp": {"gt": since}}})
+
+        if not filters:
+            search_query: dict[str, Any] = {"match_all": {}}
+        elif len(filters) == 1:
+            search_query = filters[0]
+        else:
+            search_query = {"bool": {"must": filters}}
 
         body: dict[str, Any] = {
             "size": limit,
-            "query": (
-                {"query_string": {"query": query}}
-                if query
-                else {"match_all": {}}
-            ),
-            "sort": [{"timestamp": {"order": "desc"}}],
+            "query": search_query,
+            "sort": [
+                {"timestamp": {"order": "asc" if ascending else "desc"}}
+            ],
         }
 
         try:
-            response = self._session.post(
-                f"{self.config.base_url}/{index_pattern}/_search",
-                json=body,
-                auth=(self.config.username, self.config.password),
-                verify=self.config.verify_ssl,
-                timeout=10,
+            response = _with_connection_retry(
+                lambda: self._session.post(
+                    f"{self.config.base_url}/{index_pattern}/_search",
+                    json=body,
+                    auth=(self.config.username, self.config.password),
+                    verify=self.config.verify_ssl,
+                    timeout=10,
+                )
             )
             response.raise_for_status()
 
