@@ -4,11 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.analysis.threat_assessment_parser import parse_threat_assessment
 from agent.integrations.wazuh_client import WazuhIndexerClient
 from agent.llm.ollama_client import OllamaClient
 from agent.models.security_alert import SecurityAlert
+from agent.models.threat_assessment import ThreatAssessment
 from agent.preprocessing.formatter import format_alert_for_ai
 from agent.preprocessing.normalizer import normalize_wazuh_alert
+from agent.prompts.threat_assessment_prompt import build_threat_assessment_prompt
 from agent.security.input_guard import InputGuard
 from agent.security.null_guard import NullGuard
 from agent.tools.executor import ToolExecutor
@@ -39,6 +42,7 @@ def build_alert_analysis_pipeline(
         llm=llm or OllamaClient(),
         input_guard=InputGuard(),
         semantic_guard=NullGuard(),
+        prompt_builder=build_threat_assessment_prompt,
     )
 
 
@@ -71,6 +75,16 @@ class LiveAlertInvestigator:
     action. A state-changing recommendation only ever appears as
     text in the analysis for a human to act on separately, through
     the same guarded ToolExecutor, by hand.
+
+    Each result also carries a `threat_assessment`: a structured
+    (threat_type, risk_level, confidence, recommended_actions)
+    ThreatAssessment parsed out of the LLM's response via
+    build_threat_assessment_prompt, or None if parsing failed or the
+    alert was blocked. This is the "decision engine" piece of a
+    SIEM -> AI -> SOAR pipeline -- what would let a future playbook
+    branch on risk_level instead of a human re-reading prose. Parsing
+    failure degrades gracefully rather than raising: the free-text
+    `analysis["response"]` is always still there as a fallback.
     """
 
     def __init__(
@@ -182,6 +196,12 @@ class LiveAlertInvestigator:
                 top_k=top_k,
             )
 
+            threat_assessment = (
+                parse_threat_assessment(analysis["response"])
+                if analysis.get("guard_decision") == "ALLOW"
+                else None
+            )
+
             results.append(
                 {
                     "alert": alert,
@@ -189,6 +209,7 @@ class LiveAlertInvestigator:
                     "raw_alert": raw_alert,
                     "enrichment": enrichment,
                     "analysis": analysis,
+                    "threat_assessment": threat_assessment,
                 }
             )
 
@@ -275,6 +296,9 @@ class LiveAlertInvestigator:
         alert = entry["alert"]
         analysis = entry["analysis"]
         enrichment = entry.get("enrichment", [])
+        threat_assessment: ThreatAssessment | None = entry.get(
+            "threat_assessment"
+        )
 
         record = {
             "timestamp": entry["raw_alert"].get("timestamp"),
@@ -285,6 +309,20 @@ class LiveAlertInvestigator:
             "enrichment_tools": [item["tool"] for item in enrichment],
             "guard_decision": analysis["guard_decision"] if analysis else None,
             "guard_layer": analysis.get("guard_layer") if analysis else None,
+            "threat_type": (
+                threat_assessment.threat_type if threat_assessment else None
+            ),
+            "risk_level": (
+                threat_assessment.risk_level if threat_assessment else None
+            ),
+            "confidence": (
+                threat_assessment.confidence if threat_assessment else None
+            ),
+            "recommended_actions": (
+                threat_assessment.recommended_actions
+                if threat_assessment
+                else None
+            ),
             "response_summary": (
                 analysis["response"][:500]
                 if analysis and analysis.get("response")

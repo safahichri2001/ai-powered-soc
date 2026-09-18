@@ -19,6 +19,7 @@ class RAGPipeline:
         input_guard: InputGuard | None = None,
         semantic_guard: SemanticGuard | None = None,
         rag_context_guard: RAGContextGuard | None = None,
+        prompt_builder: Any | None = None,
     ) -> None:
         self.retriever = retriever
         self.llm = llm or OllamaClient()
@@ -36,6 +37,14 @@ class RAGPipeline:
             or RAGContextGuard(
                 threshold=0.56,
             )
+        )
+
+        # Swappable so a caller can ask for something other than free
+        # text back (e.g. a structured threat assessment for the
+        # alert-investigation path) without RAGPipeline itself needing
+        # to know about that use case.
+        self.prompt_builder = (
+            prompt_builder or build_security_analysis_prompt
         )
 
     def _build_context_text(
@@ -189,7 +198,7 @@ class RAGPipeline:
         # Layer 5: normal RAG generation
         # -----------------------------------------------------
 
-        prompt = build_security_analysis_prompt(
+        prompt = self.prompt_builder(
             query=query,
             context=context,
         )
