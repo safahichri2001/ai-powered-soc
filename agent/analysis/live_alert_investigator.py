@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.analysis.soar_playbook import ProposedAction, build_response_plan
 from agent.analysis.threat_assessment_parser import parse_threat_assessment
 from agent.integrations.wazuh_client import WazuhIndexerClient
 from agent.llm.ollama_client import OllamaClient
@@ -85,6 +86,15 @@ class LiveAlertInvestigator:
     branch on risk_level instead of a human re-reading prose. Parsing
     failure degrades gracefully rather than raising: the free-text
     `analysis["response"]` is always still there as a fallback.
+
+    Each result also carries a `response_plan`: a list of
+    ProposedAction from agent/analysis/soar_playbook.py, built only
+    from `risk_level` and fixed alert fields (never from the LLM's
+    free-text recommended_actions). Every proposed action requires
+    human approval -- nothing in this class executes one. Use
+    execute_proposed_action() separately, after a human has reviewed
+    the plan, to actually run an approved action through
+    ToolExecutor.
     """
 
     def __init__(
@@ -202,6 +212,8 @@ class LiveAlertInvestigator:
                 else None
             )
 
+            response_plan = build_response_plan(alert, threat_assessment)
+
             results.append(
                 {
                     "alert": alert,
@@ -210,6 +222,7 @@ class LiveAlertInvestigator:
                     "enrichment": enrichment,
                     "analysis": analysis,
                     "threat_assessment": threat_assessment,
+                    "response_plan": response_plan,
                 }
             )
 
@@ -299,6 +312,7 @@ class LiveAlertInvestigator:
         threat_assessment: ThreatAssessment | None = entry.get(
             "threat_assessment"
         )
+        response_plan: list[ProposedAction] = entry.get("response_plan", [])
 
         record = {
             "timestamp": entry["raw_alert"].get("timestamp"),
@@ -323,6 +337,14 @@ class LiveAlertInvestigator:
                 if threat_assessment
                 else None
             ),
+            "proposed_actions": [
+                {
+                    "tool_name": action.tool_name,
+                    "tool_parameters": action.tool_parameters,
+                    "reason": action.reason,
+                }
+                for action in response_plan
+            ],
             "response_summary": (
                 analysis["response"][:500]
                 if analysis and analysis.get("response")

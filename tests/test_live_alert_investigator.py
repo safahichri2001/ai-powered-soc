@@ -608,3 +608,63 @@ def test_build_alert_analysis_pipeline_uses_threat_assessment_prompt():
     pipeline.analyze("Security Alert: sshd authentication failed.")
 
     assert "THREAT_ASSESSMENT" in llm.calls[0]
+
+
+# ============================================================
+# response_plan (SOAR playbook) wiring
+# ============================================================
+
+HIGH_RISK_RESPONSE = (
+    "<THREAT_ASSESSMENT>\n"
+    '{"threat_type": "SSH Brute Force", "risk_level": "HIGH", '
+    '"confidence": 0.9, "summary": "Multiple failed logins.", '
+    '"recommended_actions": ["Block source IP"]}\n'
+    "</THREAT_ASSESSMENT>"
+)
+
+
+def test_response_plan_is_attached_for_high_risk_alert_with_source_ip():
+    indexer = _build_fake_indexer([RAW_ALERT])  # has source_ip 10.0.0.20
+    llm = FakeLLM(response=HIGH_RISK_RESPONSE)
+    pipeline = _build_pipeline(llm)
+    investigator = LiveAlertInvestigator(indexer=indexer, rag_pipeline=pipeline)
+
+    results = investigator.investigate_recent(limit=5)
+
+    plan = results[0]["response_plan"]
+    assert len(plan) == 1
+    assert plan[0].tool_name == "FirewallBlockIndicator"
+    assert plan[0].tool_parameters == {"indicator": "10.0.0.20"}
+
+
+def test_response_plan_is_empty_when_threat_assessment_is_none():
+    indexer = _build_fake_indexer([RAW_ALERT])
+    llm = FakeLLM(response="unstructured text, no JSON here")
+    pipeline = _build_pipeline(llm)
+    investigator = LiveAlertInvestigator(indexer=indexer, rag_pipeline=pipeline)
+
+    results = investigator.investigate_recent(limit=5)
+
+    assert results[0]["threat_assessment"] is None
+    assert results[0]["response_plan"] == []
+
+
+def test_proposed_actions_are_persisted_in_analysis_log(tmp_path: Path):
+    indexer = _build_fake_indexer([RAW_ALERT])
+    llm = FakeLLM(response=HIGH_RISK_RESPONSE)
+    pipeline = _build_pipeline(llm)
+    investigator = LiveAlertInvestigator(
+        indexer=indexer,
+        rag_pipeline=pipeline,
+        state_path=tmp_path / "state.json",
+        analysis_log_path=tmp_path / "log.jsonl",
+    )
+
+    investigator.investigate_new(limit=5)
+
+    line = investigator.analysis_log_path.read_text(encoding="utf-8").strip()
+    record = json.loads(line)
+
+    assert len(record["proposed_actions"]) == 1
+    assert record["proposed_actions"][0]["tool_name"] == "FirewallBlockIndicator"
+    assert record["proposed_actions"][0]["reason"]
