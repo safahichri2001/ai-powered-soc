@@ -5,6 +5,7 @@ xgboost
 torch
 fastapi
 uvicorn
+email-validator
 pydantic
 requests
 urllib3
