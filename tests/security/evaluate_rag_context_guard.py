@@ -412,6 +412,12 @@ def calculate_metrics(
         else 0.0
     )
 
+    # Attack Success Rate (ASR): poisoned contexts the guard
+    # incorrectly let through, out of all poisoned contexts.
+    # Same definition as the prompt injection / tool misuse ASR --
+    # ASR = 1 - detection_rate, so the three pillars are comparable.
+    asr = 1.0 - detection_rate
+
     return {
         "detection_rate": detection_rate,
         "false_positive_rate": false_positive_rate,
@@ -419,6 +425,7 @@ def calculate_metrics(
         "recall": recall,
         "f1": f1,
         "accuracy": accuracy,
+        "asr": asr,
         "tp": float(tp),
         "fp": float(fp),
         "tn": float(tn),
@@ -771,6 +778,12 @@ def main() -> None:
     print(
         f"Poison detection rate: "
         f"{metrics['detection_rate']:.2%}"
+    )
+
+    print(
+        f"ASR:                   "
+        f"{metrics['asr']:.4f} "
+        f"({metrics['asr'] * 100:.2f}%)"
     )
 
     print(
