@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>AI-Powered SOC</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #161d2e;
+    --border: #2a3348;
+    --text: #e2e8f0;
+    --muted: #8896ab;
+    --low: #4b5563;
+    --medium: #b58900;
+    --high: #d97706;
+    --critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .status { font-size: 13px; color: var(--muted); }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  .toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .toolbar input {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 4px;
+    width: 120px;
+  }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .rule { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: white;
+    white-space: nowrap;
+  }
+  .badge-LOW { background: var(--low); }
+  .badge-MEDIUM { background: var(--medium); }
+  .badge-HIGH { background: var(--high); }
+  .badge-CRITICAL { background: var(--critical); }
+  .badge-BLOCKED { background: var(--critical); }
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-top: 14px;
+    margin-bottom: 4px;
+  }
+  .summary { margin: 2px 0 10px; font-size: 14px; line-height: 1.4; }
+  .warning {
+    font-size: 12px;
+    color: #fca5a5;
+    background: #3f1717;
+    border: 1px solid #7f1d1d;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 8px 0;
+  }
+  .actions { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .action-name { font-weight: 600; }
+  .action-reason { color: var(--muted); }
+  select, button {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.approve { background: #1d4ed8; border-color: #1d4ed8; }
+  button.approve:hover { background: #1e40af; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .action-result {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .result-EXECUTED { background: #14532d; color: #bbf7d0; }
+  .result-BLOCKED { background: #7f1d1d; color: #fecaca; }
+  .result-ERROR { background: #78350f; color: #fde68a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI-Powered SOC</h1>
+  <div class="status" id="status">connexion...</div>
+</header>
+<main>
+  <div class="toolbar">
+    <label>Approuve en tant que : <input id="approvedBy" value="analyst_1"></label>
+  </div>
+  <div id="alerts">
+    <div class="empty">En attente d'alertes...</div>
+  </div>
+</main>
+
+<script>
+const API_BASE = "";
+const POLL_INTERVAL_MS = 5000;
+const POLL_BATCH_SIZE = 3;
+const alertsEl = document.getElementById("alerts");
+const statusEl = document.getElementById("status");
+
+let entries = [];
+
+// Tools that cut off network access -- shown with an extra warning
+// before a human approves them, since they're disruptive to reverse.
+const ISOLATION_TOOLS = new Set(["WazuhIsolateAgent"]);
+
+function badgeClass(riskLevel) {
+  return "badge badge-" + (riskLevel || "LOW");
+}
+
+function renderAction(entryIndex, actionIndex, action) {
+  const rowId = `action-${entryIndex}-${actionIndex}`;
+  const warning = ISOLATION_TOOLS.has(action.tool_name)
+    ? `<div class="warning">⚠ Cette action va isoler l'hôte du réseau.</div>`
+    : "";
+
+  return `
+    <div class="section-label">PROPOSED ACTION</div>
+    ${warning}
+    <div class="action-row" id="${rowId}">
+      <span class="action-name">${action.tool_name}</span>
+      <span class="badge ${badgeClass(action.risk_level)}">${action.risk_level}</span>
+      <span class="action-reason">${action.reason}</span>
+      <select id="${rowId}-role">
+        <option value="analyst">analyst</option>
+        <option value="admin">admin</option>
+      </select>
+      <button class="approve" onclick="approveAction(${entryIndex}, ${actionIndex})">Approuver et exécuter</button>
+      <span class="action-result" id="${rowId}-result"></span>
+    </div>
+  `;
+}
+
+function renderEntry(entry, index) {
+  const alert = entry.alert;
+  const ta = entry.threat_assessment;
+  const analysis = entry.analysis;
+  const guardBlocked = analysis && analysis.guard_decision === "BLOCK";
+
+  if (!alert) {
+    return `
+      <div class="card">
+        <div class="card-head">
+          <span class="rule">Alerte non normalisée</span>
+          <span class="badge badge-BLOCKED">ERROR</span>
+        </div>
+        <div class="meta">${entry.normalization_error || ""}</div>
+      </div>
+    `;
+  }
+
+  const head = `
+    <div class="card-head">
+      <div>
+        <div class="rule">${alert.rule_description} <span class="meta">(rule ${alert.rule_id}, severity ${alert.severity})</span></div>
+        <div class="meta">${alert.agent_name} · ${alert.source_ip || "no source ip"} · ${alert.timestamp}</div>
+      </div>
+      <span class="badge ${badgeClass(guardBlocked ? "BLOCKED" : (ta ? ta.risk_level : "LOW"))}">${guardBlocked ? "BLOCKED" : (ta ? ta.risk_level : "LOW")}</span>
+    </div>
+  `;
+
+  // A guard block happens automatically, in real time, before the LLM
+  // ever sees the alert -- there is nothing to approve here, so no
+  // action UI is shown, only what blocked it and why.
+  if (guardBlocked) {
+    return `
+      <div class="card">
+        ${head}
+        <div class="section-label">GUARD DECISION</div>
+        <div class="summary">
+          Blocked by <strong>${analysis.guard_layer || "unknown guard"}</strong> --
+          ${analysis.guard_reason || "no reason recorded"}
+        </div>
+      </div>
+    `;
+  }
+
+  const actions = (entry.response_plan || [])
+    .map((action, i) => renderAction(index, i, action))
+    .join("");
+
+  return `
+    <div class="card">
+      ${head}
+      ${ta ? `
+        <div class="section-label">AI THREAT ASSESSMENT</div>
+        <div class="summary"><strong>${ta.threat_type}</strong> -- ${ta.summary}</div>
+      ` : (analysis && analysis.response ? `<div class="summary">${analysis.response}</div>` : "")}
+      ${actions ? `<div class="actions">${actions}</div>` : ""}
+    </div>
+  `;
+}
+
+function render() {
+  if (entries.length === 0) {
+    alertsEl.innerHTML = `<div class="empty">En attente d'alertes...</div>`;
+    return;
+  }
+  alertsEl.innerHTML = entries.map(renderEntry).join("");
+}
+
+async function approveAction(entryIndex, actionIndex) {
+  const entry = entries[entryIndex];
+  const action = entry.response_plan[actionIndex];
+  const rowId = `action-${entryIndex}-${actionIndex}`;
+  const role = document.getElementById(`${rowId}-role`).value;
+  const approvedBy = document.getElementById("approvedBy").value || "unknown";
+  const resultEl = document.getElementById(`${rowId}-result`);
+
+  resultEl.textContent = "...";
+  resultEl.className = "action-result";
+
+  try {
+    const response = await fetch(`${API_BASE}/actions/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tool_name: action.tool_name,
+        tool_parameters: action.tool_parameters,
+        reason: action.reason,
+        risk_level: action.risk_level,
+        approved_by: approvedBy,
+        approver_role: role,
+        confirmation_token: action.confirmation_token,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      resultEl.textContent = data.detail || "refusé";
+      resultEl.classList.add("result-BLOCKED");
+      return;
+    }
+
+    resultEl.textContent = data.status;
+    resultEl.classList.add(`result-${data.status}`);
+  } catch (err) {
+    resultEl.textContent = "erreur réseau";
+    resultEl.classList.add("result-ERROR");
+  }
+}
+
+// Each alert is analyzed by a local LLM one at a time server-side,
+// which can take anywhere from a few seconds to over a minute per
+// alert. setInterval would fire a new poll before a slow one
+// finishes, piling up overlapping requests -- so instead each poll
+// schedules the next one only after it completes (success or not).
+async function poll() {
+  statusEl.textContent = "analyse en cours...";
+
+  try {
+    const response = await fetch(`${API_BASE}/alerts/poll?limit=${POLL_BATCH_SIZE}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const newEntries = await response.json();
+
+    if (newEntries.length > 0) {
+      entries = [...newEntries.reverse(), ...entries];
+      render();
+    }
+
+    statusEl.textContent = `connecté · dernière vérification ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    statusEl.textContent = `déconnecté (${err.message})`;
+  } finally {
+    setTimeout(poll, POLL_INTERVAL_MS);
+  }
+}
+
+render();
+poll();
+</script>
+</body>
+</html>

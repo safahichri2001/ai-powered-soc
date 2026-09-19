@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from agent.analysis.approval_policy import PolicyError
 from agent.analysis.live_alert_investigator import LiveAlertInvestigator
@@ -135,3 +137,12 @@ def approve_action(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     return tool_execution_result_out(result)
+
+
+DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+
+app.mount(
+    "/dashboard",
+    StaticFiles(directory=DASHBOARD_DIR, html=True),
+    name="dashboard",
+)
