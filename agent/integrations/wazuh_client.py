@@ -190,6 +190,42 @@ class WazuhManagerClient:
 
         return items[0]
 
+    def trigger_active_response(
+        self,
+        agent_id: str,
+        command_name: str,
+        arguments: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Trigger an Active Response command on a specific agent.
+
+        `command_name` must match the executable name the agent
+        actually has under active-response/bin/ -- Wazuh derives
+        this from the command's position among configured
+        <active-response> blocks (e.g. "isolate-host0"), not
+        necessarily the <name> given in ossec.conf's <command>
+        block. Verify empirically (this was confirmed the hard way:
+        the API call succeeds regardless of whether the name is
+        right, and silently does nothing if it's wrong).
+
+        Known limitation: there is no simple "cancel on demand" via
+        this API for a manually-triggered command with no configured
+        <timeout> -- reversing an action triggered this way currently
+        requires direct access to the target host (see
+        active-response/bin/<command_name> and send it a `{"command":
+        "delete"}` line directly), not something this method can do.
+        """
+
+        return self._request(
+            "PUT",
+            "/active-response",
+            params={"agents_list": agent_id},
+            json={
+                "command": f"!{command_name}",
+                "arguments": arguments or [],
+            },
+        )
+
 
 class WazuhIndexerClient:
     """

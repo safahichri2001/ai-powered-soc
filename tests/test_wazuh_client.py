@@ -343,3 +343,75 @@ def test_get_agent_retries_once_after_transient_connection_error():
 
     assert agent["name"] == "kali"
     assert mock_request.call_count == 2
+
+
+# ============================================================
+# trigger_active_response
+# ============================================================
+
+
+def test_trigger_active_response_sends_expected_request():
+    config = WazuhConfig("https://10.0.0.10:55000", "user", "pass", False)
+    client = WazuhManagerClient(config=config)
+
+    auth_response = _response({"data": {"token": "jwt-token"}})
+    ar_response = _response(
+        {
+            "data": {
+                "affected_items": ["001"],
+                "total_affected_items": 1,
+                "total_failed_items": 0,
+                "failed_items": [],
+            },
+            "message": "AR command was sent to all agents",
+            "error": 0,
+        }
+    )
+
+    with patch.object(
+        requests.Session, "post", return_value=auth_response
+    ), patch.object(
+        requests.Session, "request", return_value=ar_response
+    ) as mock_request:
+        result = client.trigger_active_response(
+            agent_id="001", command_name="isolate-host0"
+        )
+
+    assert result["message"] == "AR command was sent to all agents"
+
+    _, kwargs = mock_request.call_args
+    assert kwargs["params"] == {"agents_list": "001"}
+    assert kwargs["json"] == {
+        "command": "!isolate-host0",
+        "arguments": [],
+    }
+
+    args, _ = mock_request.call_args
+    method, url = args
+    assert method == "PUT"
+    assert url.endswith("/active-response")
+
+
+def test_trigger_active_response_passes_arguments():
+    config = WazuhConfig("https://10.0.0.10:55000", "user", "pass", False)
+    client = WazuhManagerClient(config=config)
+
+    auth_response = _response({"data": {"token": "jwt-token"}})
+    ar_response = _response({"data": {}, "message": "ok", "error": 0})
+
+    with patch.object(
+        requests.Session, "post", return_value=auth_response
+    ), patch.object(
+        requests.Session, "request", return_value=ar_response
+    ) as mock_request:
+        client.trigger_active_response(
+            agent_id="001",
+            command_name="firewall-drop0",
+            arguments=["10.0.0.20"],
+        )
+
+    _, kwargs = mock_request.call_args
+    assert kwargs["json"] == {
+        "command": "!firewall-drop0",
+        "arguments": ["10.0.0.20"],
+    }

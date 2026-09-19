@@ -9,15 +9,20 @@ from agent.tools.registry import ToolRegistry
 """
 SOC operator tools.
 
-WazuhSearchAlerts and WazuhGetAgentInfo call the real Wazuh
-Indexer / Manager APIs (see agent/integrations/wazuh_client.py).
-Everything else is still simulated because it depends on lab
-infrastructure that doesn't exist yet (an Active Response script
-for isolation, a real firewall/IAM integration) -- see README
-roadmap. Swapping a simulated handler for a real one never
-requires touching ToolExecutor or ToolMisuseGuard: the enforcement
-layer only ever sees the (instruction, tool_name, parameters)
-triple, never the handler implementation.
+WazuhSearchAlerts, WazuhGetAgentInfo, and WazuhIsolateAgent call the
+real Wazuh Indexer / Manager APIs (see
+agent/integrations/wazuh_client.py). Everything else is still
+simulated because it depends on lab infrastructure that doesn't
+exist yet (a real firewall/IAM integration) -- see README roadmap.
+Swapping a simulated handler for a real one never requires touching
+ToolExecutor or ToolMisuseGuard: the enforcement layer only ever
+sees the (instruction, tool_name, parameters) triple, never the
+handler implementation.
+
+WazuhIsolateAgent's Active Response only knows how to isolate, not
+reverse it -- see WazuhManagerClient.trigger_active_response's
+docstring. Lifting isolation currently requires direct access to
+the target host, not a tool call through this registry.
 """
 
 
@@ -56,6 +61,31 @@ def _make_wazuh_get_agent_info(
     return handler
 
 
+def _make_wazuh_isolate_agent(
+    manager: WazuhManagerClient,
+) -> Callable[..., dict[str, Any]]:
+    # Wazuh derives the executable name Active Response invokes from
+    # its position among <active-response> blocks in ossec.conf, not
+    # necessarily the <name> configured -- "isolate-host0" was
+    # confirmed empirically against the lab's actual deployment, not
+    # assumed. Redeploying the config elsewhere may change this.
+    COMMAND_NAME = "isolate-host0"
+
+    def handler(agent_id: str) -> dict[str, Any]:
+        result = manager.trigger_active_response(
+            agent_id=agent_id,
+            command_name=COMMAND_NAME,
+        )
+        return {
+            "simulated": False,
+            "action": "isolate_agent",
+            "agent_id": agent_id,
+            "api_response": result,
+        }
+
+    return handler
+
+
 def threat_intel_lookup_ip(ip_address: str) -> dict[str, Any]:
     return {
         "simulated": True,
@@ -68,15 +98,6 @@ def threat_intel_lookup_ip(ip_address: str) -> dict[str, Any]:
 # ============================================================
 # High-risk / state-changing tools
 # ============================================================
-
-def wazuh_isolate_agent(agent_id: str) -> dict[str, Any]:
-    return {
-        "simulated": True,
-        "action": "isolate_agent",
-        "agent_id": agent_id,
-        "isolated": True,
-    }
-
 
 def firewall_block_indicator(indicator: str) -> dict[str, Any]:
     return {
@@ -176,7 +197,7 @@ def build_default_registry(
         Tool(
             name="WazuhIsolateAgent",
             description="Disconnect a monitored host from the network.",
-            handler=wazuh_isolate_agent,
+            handler=_make_wazuh_isolate_agent(manager),
         )
     )
 
