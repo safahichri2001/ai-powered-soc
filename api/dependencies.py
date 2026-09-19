@@ -10,6 +10,7 @@ from agent.security.tool_misuse_guard import ToolMisuseGuard
 from agent.tools.executor import ToolExecutor
 from agent.tools.soc_tools import build_default_registry
 from rag.retrieval.retriever import Retriever
+from rag.retrieval.vector_store import build_vector_store
 
 _investigator: LiveAlertInvestigator | None = None
 _investigator_lock = threading.Lock()
@@ -42,7 +43,7 @@ def get_investigator() -> LiveAlertInvestigator:
     if _investigator is None:
         with _investigator_lock:
             if _investigator is None:
-                retriever = Retriever()
+                retriever = Retriever(vector_store=build_vector_store())
                 rag_pipeline = build_alert_analysis_pipeline(retriever=retriever)
 
                 registry = build_default_registry()
