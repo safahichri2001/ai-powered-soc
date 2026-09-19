@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
+from agent.analysis.approval_policy import PolicyError, generate_confirmation_token
 from agent.analysis.soar_playbook import (
     ProposedAction,
     build_response_plan,
@@ -64,6 +65,7 @@ def test_high_risk_with_source_ip_proposes_firewall_block():
     assert len(plan) == 1
     assert plan[0].tool_name == "FirewallBlockIndicator"
     assert plan[0].tool_parameters == {"indicator": "10.0.0.20"}
+    assert plan[0].risk_level == "HIGH"
     assert plan[0].requires_approval is True
 
 
@@ -166,15 +168,26 @@ class BlockGuard:
         return _Result()
 
 
-def test_approved_action_executes_through_tool_executor():
-    executor, handler = _build_executor(AllowGuard())
-    action = ProposedAction(
+def _high_risk_action() -> ProposedAction:
+    return ProposedAction(
         tool_name="FirewallBlockIndicator",
         tool_parameters={"indicator": "10.0.0.20"},
         reason="test reason",
+        risk_level="HIGH",
     )
 
-    result = execute_proposed_action(action, executor, approved_by="analyst_1")
+
+def test_approved_action_executes_through_tool_executor():
+    executor, handler = _build_executor(AllowGuard())
+    action = _high_risk_action()
+
+    result = execute_proposed_action(
+        action,
+        executor,
+        approved_by="analyst_1",
+        approver_role="analyst",
+        confirmation_token=generate_confirmation_token(action),
+    )
 
     assert result.status == "EXECUTED"
     handler.assert_called_once_with(indicator="10.0.0.20")
@@ -188,13 +201,127 @@ def test_approval_does_not_bypass_the_guard():
     """
 
     executor, handler = _build_executor(BlockGuard())
-    action = ProposedAction(
-        tool_name="FirewallBlockIndicator",
-        tool_parameters={"indicator": "10.0.0.20"},
-        reason="test reason",
-    )
+    action = _high_risk_action()
 
-    result = execute_proposed_action(action, executor, approved_by="analyst_1")
+    result = execute_proposed_action(
+        action,
+        executor,
+        approved_by="analyst_1",
+        approver_role="analyst",
+        confirmation_token=generate_confirmation_token(action),
+    )
 
     assert result.status == "BLOCKED"
     handler.assert_not_called()
+
+
+# ============================================================
+# Approval policy: wrong token / insufficient role are rejected
+# BEFORE the guard is ever consulted
+# ============================================================
+
+
+def test_wrong_confirmation_token_is_rejected():
+    executor, handler = _build_executor(AllowGuard())
+    action = _high_risk_action()
+
+    try:
+        execute_proposed_action(
+            action,
+            executor,
+            approved_by="analyst_1",
+            approver_role="analyst",
+            confirmation_token="not-the-real-token",
+        )
+        assert False, "expected PolicyError"
+    except PolicyError:
+        pass
+
+    handler.assert_not_called()
+
+
+def test_token_for_a_different_action_is_rejected():
+    """
+    A valid token for one action must not authorize a different
+    one -- proves the token is bound to this action's exact content.
+    """
+
+    executor, handler = _build_executor(AllowGuard())
+    action = _high_risk_action()
+    other_action = ProposedAction(
+        tool_name="WazuhIsolateAgent",
+        tool_parameters={"agent_id": "001"},
+        reason="different action",
+        risk_level="CRITICAL",
+    )
+
+    try:
+        execute_proposed_action(
+            action,
+            executor,
+            approved_by="analyst_1",
+            approver_role="analyst",
+            confirmation_token=generate_confirmation_token(other_action),
+        )
+        assert False, "expected PolicyError"
+    except PolicyError:
+        pass
+
+    handler.assert_not_called()
+
+
+def test_analyst_cannot_approve_critical_action():
+    registry = ToolRegistry()
+    handler = MagicMock(return_value={"isolated": True})
+    registry.register(
+        Tool(name="WazuhIsolateAgent", description="test", handler=handler)
+    )
+    executor = ToolExecutor(registry=registry, guard=AllowGuard())
+
+    action = ProposedAction(
+        tool_name="WazuhIsolateAgent",
+        tool_parameters={"agent_id": "001"},
+        reason="test reason",
+        risk_level="CRITICAL",
+    )
+
+    try:
+        execute_proposed_action(
+            action,
+            executor,
+            approved_by="analyst_1",
+            approver_role="analyst",
+            confirmation_token=generate_confirmation_token(action),
+        )
+        assert False, "expected PolicyError"
+    except PolicyError:
+        pass
+
+    handler.assert_not_called()
+
+
+def test_admin_can_approve_critical_action():
+    registry = ToolRegistry()
+    handler = MagicMock(return_value={"isolated": True})
+    registry.register(
+        Tool(name="WazuhIsolateAgent", description="test", handler=handler)
+    )
+    executor = ToolExecutor(registry=registry, guard=AllowGuard())
+
+    action = ProposedAction(
+        tool_name="WazuhIsolateAgent",
+        tool_parameters={"agent_id": "001"},
+        reason="test reason",
+        risk_level="CRITICAL",
+    )
+
+    result = execute_proposed_action(
+        action,
+        executor,
+        approved_by="admin_1",
+        approver_role="admin",
+        confirmation_token=generate_confirmation_token(action),
+    )
+
+    assert result.status == "EXECUTED"
+    handler.assert_called_once_with(agent_id="001")

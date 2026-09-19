@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from agent.analysis.approval_policy import check_approval
 from agent.models.security_alert import SecurityAlert
 from agent.models.threat_assessment import ThreatAssessment
 from agent.tools.executor import ToolExecutionResult, ToolExecutor
@@ -13,12 +14,16 @@ class ProposedAction:
     """
     One action a response plan proposes -- never executed on its
     own. `reason` exists so a human reviewing the plan sees exactly
-    why it was proposed, not just what it does.
+    why it was proposed, not just what it does. `risk_level` is
+    carried along from the ThreatAssessment that triggered this
+    action, so execute_proposed_action() can check it against the
+    approval policy without needing the caller to pass it separately.
     """
 
     tool_name: str
     tool_parameters: dict[str, Any]
     reason: str
+    risk_level: str
     requires_approval: bool = True
 
 
@@ -59,6 +64,7 @@ def build_response_plan(
                         f"CRITICAL risk ({threat_assessment.threat_type}) "
                         f"on agent {alert.agent_id} -- isolate to contain."
                     ),
+                    risk_level=threat_assessment.risk_level,
                 )
             )
 
@@ -73,6 +79,7 @@ def build_response_plan(
                         f"({threat_assessment.threat_type}) from "
                         f"{alert.source_ip} -- block source."
                     ),
+                    risk_level=threat_assessment.risk_level,
                 )
             )
 
@@ -83,19 +90,34 @@ def execute_proposed_action(
     action: ProposedAction,
     tool_executor: ToolExecutor,
     approved_by: str,
+    approver_role: str,
+    confirmation_token: str,
 ) -> ToolExecutionResult:
     """
     Execute a proposed action a human has explicitly approved.
 
-    Approval decides whether this call happens at all -- it does
-    NOT bypass ToolMisuseGuard. The call still goes through
-    ToolExecutor exactly like any other tool call, so a plan built
-    from a poisoned/manipulated assessment still can't force an
-    action the guard would otherwise reject.
+    Two checks happen before anything runs, in this order:
+
+    1. Policy (check_approval): the confirmation_token must match
+       this exact action's content (proves the caller is acting on
+       the action that was actually reviewed, not a different or
+       modified one), and approver_role must meet the minimum role
+       required for this action's risk_level (see
+       agent/analysis/approval_policy.py). Raises PolicyError if
+       either check fails -- nothing is executed.
+
+    2. ToolMisuseGuard, inside ToolExecutor.run(), same as any other
+       tool call. Passing the policy check does NOT bypass this --
+       a plan built from a poisoned/manipulated assessment still
+       can't force an action the guard would otherwise reject.
     """
 
+    check_approval(action, approver_role, confirmation_token)
+
     return tool_executor.run(
-        user_instruction=f"[Approved by {approved_by}] {action.reason}",
+        user_instruction=(
+            f"[Approved by {approved_by} ({approver_role})] {action.reason}"
+        ),
         tool_name=action.tool_name,
         tool_parameters=action.tool_parameters,
     )
