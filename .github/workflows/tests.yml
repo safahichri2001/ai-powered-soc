@@ -33,7 +33,22 @@ jobs:
       - name: Run tests
         env:
           HF_HUB_OFFLINE: "0"
+        # The BIPIA benchmark corpus (data/external/bipia/) is not
+        # committed to the repo (12MB external academic dataset,
+        # gitignored) -- RAGContextGuard() and BIPIAAttackStore
+        # default to loading it, so anything that constructs one
+        # without overriding it can't run here. Ignored below at the
+        # file level for tests wholly about that corpus, and
+        # deselected individually in test_live_alert_investigator.py
+        # so its other, unrelated tests still run in CI.
         run: >
           python -m pytest -q
           --ignore=tests/test_ollama_client.py
           --ignore=tests/test_rag_pipeline.py
+          --ignore=tests/security/test_bipia_attack_store.py
+          --ignore=tests/security/test_rag_context_guard.py
+          --ignore=tests/security/test_rag_poisoning_integration.py
+          --deselect=tests/test_live_alert_investigator.py::test_routine_alert_that_previously_false_positived_now_passes
+          --deselect=tests/test_live_alert_investigator.py::test_log_borne_injection_is_still_blocked_without_semantic_guard
+          --deselect=tests/test_live_alert_investigator.py::test_threat_assessment_is_none_when_blocked
+          --deselect=tests/test_live_alert_investigator.py::test_build_alert_analysis_pipeline_uses_threat_assessment_prompt
