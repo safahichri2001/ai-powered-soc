@@ -31,9 +31,9 @@ data/processed/*
 # Vector databases / local stores
 chroma/
 qdrant_storage/
-test_qdrant_storage/
-test_rag_qdrant/
-test_security_attack_qdrant/
+test_*qdrant*/
+test_bipia_poisoned_baseline/
+test_rag_poisoning_*/
 *.db
 *.sqlite
 
