@@ -596,6 +596,18 @@ function render() {
   document.getElementById("bellCount").textContent = pendingCount;
   renderDonut(counts);
 
+  // Preserve any in-progress role/justification selections for the
+  // expanded row -- a new alert arriving mid-review shouldn't silently
+  // reset a value the analyst already chose.
+  const preserved = {};
+  if (expandedIndex !== null) {
+    document.querySelectorAll(`[id^="action-${expandedIndex}-"]`).forEach((el) => {
+      if (el.id.endsWith("-role") || el.id.endsWith("-justification")) {
+        preserved[el.id] = el.value;
+      }
+    });
+  }
+
   if (filtered.length === 0) {
     body.innerHTML = `<tr><td colspan="7"><div class="empty">${entries.length === 0 ? "Waiting for alerts..." : "No alerts match your search."}</div></td></tr>`;
     return;
@@ -629,6 +641,11 @@ function render() {
     }
   });
   body.innerHTML = rows;
+
+  for (const [id, value] of Object.entries(preserved)) {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  }
 }
 
 function renderDonut(counts) {
