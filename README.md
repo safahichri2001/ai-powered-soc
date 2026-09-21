@@ -113,6 +113,26 @@ token-aware — it only touches tokens with two or more real letters, so IPs,
 ports, rule IDs, and CVE numbers in real alert text pass through untouched
 while `1gn0r3` and `unl0ck` still get caught.
 
+## Dashboard
+
+Screenshots from the live lab (real Wazuh alerts, real LLM analysis, real
+Active Response — no mocked data).
+
+![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
+*Live overview: severity breakdown and alert volume computed from the real analysis log.*
+
+![CRITICAL alert before approval](docs/screenshots/02-critical-before-approval.png)
+*A real SSH brute-force alert classified CRITICAL, with its retrieved RAG context and the two SOAR-proposed actions awaiting human approval.*
+
+![CRITICAL alert executed](docs/screenshots/03-critical-executed.png)
+*After role-gated approval: the isolation action shows EXECUTED, with the AI threat assessment above it.*
+
+![Recent decisions audit trail](docs/screenshots/04-recent-decisions.png)
+*The merged audit trail — who approved what, under which role, plus the automatic read-only enrichment lookups that never require approval.*
+
+![Prompt injection blocked](docs/screenshots/05-injection-blocked.png)
+*A live prompt-injection attempt (a malicious SSH username) caught by `input_guard` before it ever reached the LLM.*
+
 ## Decision engine and SOAR — how the agent stays out of the loop
 
 The LLM's job ends at producing a structured `ThreatAssessment` (threat
