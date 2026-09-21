@@ -35,4 +35,17 @@ def format_alert_for_ai(alert: SecurityAlert) -> str:
     if mitre:
         lines.append(f"MITRE information: {mitre}")
 
+    # Wazuh's own decoders extract structured fields (like `user`)
+    # with narrow regexes built for normal values -- an attacker who
+    # puts unexpected text where a username/command is read can end
+    # up with it silently truncated before it ever reaches `data`
+    # (observed live: a multi-word SSH username was cut down to its
+    # last token by Wazuh's sshd decoder). full_log is Wazuh's
+    # unprocessed copy of the original line, so scanning it too
+    # means a decoder losing/mangling a field doesn't also blind the
+    # guard to what an attacker actually sent.
+    full_log = alert.raw_event.get("full_log")
+    if full_log:
+        lines.append(f"Raw log: {full_log}")
+
     return "\n".join(lines)

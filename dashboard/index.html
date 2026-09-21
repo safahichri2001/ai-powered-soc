@@ -1,176 +1,515 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>AI-Powered SOC</title>
 <style>
   :root {
-    --bg: #0f1420;
-    --panel: #161d2e;
-    --border: #2a3348;
-    --text: #e2e8f0;
-    --muted: #8896ab;
-    --low: #4b5563;
-    --medium: #b58900;
-    --high: #d97706;
-    --critical: #dc2626;
+    --bg: #0e1013;
+    --sidebar: #131619;
+    --panel: #16191d;
+    --panel-hover: #1b1f24;
+    --inset: #0a0c0e;
+    --border: #262b31;
+    --border-strong: #3a4149;
+    --text: #d7dbe0;
+    --text-strong: #f4f5f7;
+    --muted: #7c848d;
+    --accent: #ff8a3d;
+    --accent-strong: #ffa361;
+    --accent-ink: #16110b;
+    --low: #5c6570;
+    --medium: #ba8730;
+    --high: #c85f31;
+    --critical: #c8433c;
+    --ok: #4c9d67;
+    --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
+    --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.22);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, Segoe UI, sans-serif;
+    font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    font-size: 13px;
   }
-  header {
-    padding: 16px 24px;
+  .app { display: flex; height: 100vh; }
+
+  /* ---------------- Sidebar ---------------- */
+  .sidebar {
+    width: 216px;
+    flex-shrink: 0;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-brand {
+    padding: 20px 18px 18px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 11px;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header .status { font-size: 13px; color: var(--muted); }
-  main {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 24px;
-  }
-  .toolbar {
+  .logo-mark {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: linear-gradient(155deg, var(--accent), #c9601c);
     display: flex;
-    gap: 12px;
     align-items: center;
-    margin-bottom: 16px;
-    font-size: 13px;
-    color: var(--muted);
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(255, 138, 61, 0.28);
   }
-  .toolbar input {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 4px 8px;
-    border-radius: 4px;
-    width: 120px;
+  .logo-mark svg { width: 16px; height: 16px; }
+  .sidebar-brand .brand-text h1 { font-size: 13.5px; font-weight: 800; margin: 0; color: var(--text-strong); line-height: 1.2; }
+  .sidebar-brand .brand-text .tagline { font-size: 10.5px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+  .nav { padding: 16px 12px; flex: 1; }
+  .nav-section-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.09em; color: #545c66; text-transform: uppercase; padding: 0 10px; margin-bottom: 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 2px;
+    color: var(--muted); text-decoration: none; font-size: 12.5px; font-weight: 600;
+    border-radius: 6px; cursor: pointer; transition: background 0.12s, color 0.12s;
   }
-  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
-  .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
+  .nav-item svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.85; }
+  .nav-item:hover { color: var(--text-strong); background: var(--panel-hover); }
+  .nav-item.active {
+    color: var(--accent-strong);
+    background: linear-gradient(90deg, rgba(255, 138, 61, 0.14), rgba(255, 138, 61, 0.02));
+    box-shadow: inset 2px 0 0 var(--accent);
   }
-  .card-head {
+  .sidebar-footer { padding: 14px 18px 18px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+
+  /* ---------------- Topbar ---------------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; }
+  .topbar {
+    padding: 12px 24px;
+    border-bottom: 1px solid #c9601c;
+    background: linear-gradient(135deg, var(--accent-strong), #c9601c 75%);
+    flex-shrink: 0;
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
+    align-items: center;
+    gap: 20px;
   }
-  .rule { font-weight: 600; }
-  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
-  .badge {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 999px;
-    color: white;
-    white-space: nowrap;
+  .topbar .status-wrap { color: var(--accent-ink); }
+  .topbar .dot.live { background: var(--accent-ink); box-shadow: none; }
+  .topbar .dot.live + span { color: var(--accent-ink); }
+  .topbar .bell-wrap { color: var(--accent-ink); }
+  .topbar .bell-badge { background: var(--critical); border: 1.5px solid var(--accent-strong); }
+  .topbar .avatar-text .name { color: var(--accent-ink); }
+  .topbar .avatar-text .role { color: rgba(22, 17, 11, 0.65); }
+  .topbar .avatar-circle { box-shadow: 0 0 0 2px rgba(22, 17, 11, 0.25); }
+  .welcome-banner {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(ellipse 60% 100% at 85% 0%, rgba(255, 138, 61, 0.22), transparent 65%),
+      linear-gradient(180deg, #14171b, #0e1013);
+    flex-shrink: 0;
   }
-  .badge-LOW { background: var(--low); }
-  .badge-MEDIUM { background: var(--medium); }
-  .badge-HIGH { background: var(--high); }
-  .badge-CRITICAL { background: var(--critical); }
-  .badge-BLOCKED { background: var(--critical); }
-  .section-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    margin-top: 14px;
-    margin-bottom: 4px;
-  }
-  .summary { margin: 2px 0 10px; font-size: 14px; line-height: 1.4; }
-  .warning {
-    font-size: 12px;
-    color: #fca5a5;
-    background: #3f1717;
-    border: 1px solid #7f1d1d;
-    border-radius: 4px;
-    padding: 6px 10px;
-    margin: 8px 0;
-  }
-  .actions { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
-  .action-row {
+  .welcome-banner svg.mountains { position: absolute; right: 0; bottom: -2px; width: 55%; max-width: 620px; height: 100%; opacity: 0.85; pointer-events: none; }
+  .welcome-banner h2 { position: relative; margin: 0; font-size: 17px; font-weight: 700; color: var(--text-strong); }
+  .welcome-banner .sub { position: relative; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .search-box {
+    flex: 1;
+    max-width: 420px;
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
-    font-size: 13px;
-    margin-bottom: 8px;
-  }
-  .action-name { font-weight: 600; }
-  .action-reason { color: var(--muted); }
-  select, button {
-    background: var(--bg);
-    color: var(--text);
+    background: var(--inset);
     border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
-    cursor: pointer;
+    border-radius: 8px;
+    padding: 7px 12px;
+    color: var(--muted);
   }
-  button.approve { background: #1d4ed8; border-color: #1d4ed8; }
-  button.approve:hover { background: #1e40af; }
+  .search-box svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .search-box input {
+    background: none; border: none; outline: none; color: var(--text);
+    font-size: 12.5px; width: 100%; font-family: var(--sans);
+  }
+  .search-box input::placeholder { color: var(--muted); }
+  .topbar-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
+  .status-wrap { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.live { background: var(--ok); box-shadow: 0 0 6px rgba(76, 157, 103, 0.7); }
+  .dot.live + span { color: var(--ok); font-weight: 600; }
+  .dot.busy { background: var(--accent); animation: blink 1s steps(2) infinite; }
+  .dot.down { background: var(--critical); }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  .bell-wrap { position: relative; cursor: default; color: var(--muted); }
+  .bell-wrap svg { width: 18px; height: 18px; }
+  .bell-badge {
+    position: absolute; top: -5px; right: -6px; background: var(--critical); color: white;
+    font-size: 9.5px; font-weight: 700; border-radius: 999px; min-width: 15px; height: 15px;
+    display: flex; align-items: center; justify-content: center; padding: 0 3px;
+    font-family: var(--mono);
+  }
+  .avatar-wrap { display: flex; align-items: center; gap: 9px; }
+  .avatar-circle {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(155deg, var(--accent-strong), #c9601c);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px; color: var(--accent-ink);
+  }
+  .avatar-text .name { font-size: 12px; font-weight: 700; color: var(--text-strong); line-height: 1.2; }
+  .avatar-text .role { font-size: 10.5px; color: var(--muted); }
+
+  .content { flex: 1; overflow-y: auto; padding: 20px 24px 50px; }
+  .content::-webkit-scrollbar { width: 9px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+  .content::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  /* ---------------- KPI tiles ---------------- */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+    padding: 13px 15px; box-shadow: var(--shadow); display: flex; align-items: flex-start; gap: 11px;
+  }
+  .icon-badge {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  .icon-badge svg { width: 16px; height: 16px; }
+  .icon-total { background: linear-gradient(155deg, var(--accent-strong), #c9601c); }
+  .icon-critical { background: linear-gradient(155deg, #e0655d, var(--critical)); }
+  .icon-high { background: linear-gradient(155deg, #dd8a5c, var(--high)); }
+  .icon-medium { background: linear-gradient(155deg, #e0b471, var(--medium)); }
+  .icon-low { background: linear-gradient(155deg, #7c8aa3, var(--low)); }
+  .icon-input { background: linear-gradient(155deg, #5aa3d8, #2f6fa8); }
+  .icon-rag { background: linear-gradient(155deg, #a879e0, #6f45a8); }
+  .icon-tool { background: linear-gradient(155deg, #4cc38a, #2c8c5f); }
+  .stat .n { font-size: 22px; font-weight: 800; line-height: 1.1; font-family: var(--mono); }
+  .stat .l { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); margin-top: 5px; text-transform: uppercase; }
+  .stat-total .n { color: var(--text-strong); }
+  .stat-low .n { color: var(--low); }
+  .stat-medium .n { color: var(--medium); }
+  .stat-high .n { color: var(--high); }
+  .stat-critical .n { color: var(--critical); }
+
+  /* ---------------- Charts ---------------- */
+  .charts-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .panel-glow { position: relative; overflow: hidden; }
+  .panel-glow::before {
+    content: ""; position: absolute; inset: -60%;
+    background: radial-gradient(circle at 30% 50%, rgba(255, 138, 61, 0.24), transparent 62%);
+    animation: glow-drift 14s ease-in-out infinite; pointer-events: none;
+  }
+  .panel-glow > * { position: relative; z-index: 1; }
+  @keyframes glow-drift { 0%, 100% { transform: translate(-6%, -4%); } 50% { transform: translate(10%, 8%); } }
+  @media (prefers-reduced-motion: reduce) { .panel-glow::before { animation: none; } }
+  .panel-title { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+  .panel-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+  svg.chart text { fill: var(--muted); font-size: 9.5px; font-family: var(--mono); }
+  .chart-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+  .chart-line.blocked { stroke: var(--critical); }
+  .chart-area { opacity: 0.14; }
+  .chart-grid { stroke: var(--border); stroke-width: 1; }
+  .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 8px; display: inline-block; border-radius: 2px; }
+  .donut-legend { margin-top: 10px; }
+  .donut-legend-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .donut-legend-row:last-child { border-bottom: none; }
+  .donut-legend-row .k { display: flex; align-items: center; gap: 7px; }
+  .donut-legend-row i { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
+  .donut-legend-row .v { font-family: var(--mono); color: var(--muted); }
+
+  /* ---------------- Guard panel ---------------- */
+  .panel-row { margin-bottom: 16px; }
+  .guard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 11px; }
+  .guard-tile { padding: 4px 16px 4px 0; border-right: 1px solid var(--border); display: flex; align-items: flex-start; gap: 10px; }
+  .guard-tile:last-child { border-right: none; }
+  .guard-tile .n { font-size: 19px; font-weight: 800; color: var(--text-strong); font-family: var(--mono); }
+  .guard-tile .l { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  /* ---------------- Table ---------------- */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th {
+    text-align: left; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr.alert-row { cursor: pointer; }
+  tr.alert-row:hover { background: var(--panel-hover); }
+  tr.alert-row.expanded { background: var(--panel-hover); }
+  .mono { font-family: var(--mono); color: var(--muted); }
+  .chev { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  #alertsTableWrap { max-height: 440px; overflow-y: auto; }
+  #alertsTableWrap::-webkit-scrollbar { width: 8px; }
+  #alertsTableWrap::-webkit-scrollbar-track { background: transparent; }
+  #alertsTableWrap::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+  #alertsTableWrap::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  .badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 2.5px 8px;
+    border-radius: 4px; color: var(--text-strong); white-space: nowrap; flex-shrink: 0; border: 1px solid transparent;
+  }
+  .badge-LOW { background: rgba(92, 101, 112, 0.22); color: #aeb6bf; border-color: var(--low); }
+  .badge-MEDIUM { background: rgba(186, 135, 48, 0.16); color: #e0b471; border-color: var(--medium); }
+  .badge-HIGH { background: rgba(200, 95, 49, 0.16); color: #e6996b; border-color: var(--high); }
+  .badge-CRITICAL { background: rgba(200, 67, 60, 0.2); color: #e6928d; border-color: var(--critical); }
+  .badge-BLOCKED { background: rgba(200, 67, 60, 0.2); color: #e6928d; border-color: var(--critical); }
+  .status-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-strong); color: var(--muted); }
+  .status-tag.blocked { color: #e6928d; border-color: var(--critical); }
+  .status-tag.pending { color: var(--accent-strong); border-color: var(--accent); }
+  .status-tag.clear { color: #86d19b; border-color: var(--ok); }
+
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 12.5px; border: 1px dashed var(--border); border-radius: 9px; }
+
+  /* ---------------- Expanded detail ---------------- */
+  .detail-box { padding: 12px 4px 6px; }
+  .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--accent-strong); margin-top: 12px; margin-bottom: 6px; text-transform: uppercase; }
+  .summary { margin: 2px 0 8px; font-size: 12.5px; line-height: 1.55; color: var(--text); }
+  .warning { font-size: 11.5px; color: #e6928d; background: rgba(200, 67, 60, 0.1); border: 1px solid rgba(200, 67, 60, 0.3); border-radius: 6px; padding: 7px 11px; margin: 8px 0; }
+  .rag-context { background: var(--inset); border: 1px solid var(--border); border-left: 2px solid var(--accent); border-radius: 0 5px 5px 0; padding: 6px 10px; margin: 4px 0; font-size: 11.5px; }
+  .rag-context .src { font-weight: 600; color: var(--accent-strong); font-family: var(--mono); }
+  .rag-context .score { color: var(--muted); float: right; font-family: var(--mono); }
+  .actions { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; }
+  .action-name { font-weight: 600; font-family: var(--mono); }
+  .action-reason { color: var(--muted); }
+  select, button, .justification {
+    background: var(--inset); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 11.5px; cursor: pointer; font-family: var(--sans);
+  }
+  .justification { width: 170px; cursor: text; }
+  select:focus, .justification:focus { outline: none; border-color: var(--accent); }
+  button.approve { background: linear-gradient(155deg, var(--accent-strong), var(--accent)); border-color: var(--accent); font-weight: 700; color: var(--accent-ink); }
+  button.approve:hover { filter: brightness(1.08); }
+  button.reject { color: #e6928d; border-color: rgba(200, 67, 60, 0.4); }
+  button.reject:hover { background: rgba(200, 67, 60, 0.12); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .action-result {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 4px;
-  }
-  .result-EXECUTED { background: #14532d; color: #bbf7d0; }
-  .result-BLOCKED { background: #7f1d1d; color: #fecaca; }
-  .result-ERROR { background: #78350f; color: #fde68a; }
+  .action-result { font-size: 11px; font-weight: 700; padding: 2.5px 9px; border-radius: 5px; border: 1px solid transparent; }
+  .result-EXECUTED { background: rgba(76, 157, 103, 0.14); color: #86d19b; border-color: rgba(76, 157, 103, 0.32); }
+  .result-BLOCKED { background: rgba(200, 67, 60, 0.14); color: #e29a95; border-color: rgba(200, 67, 60, 0.32); }
+  .result-ERROR { background: rgba(186, 135, 48, 0.14); color: #e0b471; border-color: rgba(186, 135, 48, 0.32); }
+
+  /* ---------------- Decisions log ---------------- */
+  .decision-row { display: flex; align-items: center; gap: 10px; font-size: 11.5px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .decision-row:last-child { border-bottom: none; }
+  .decision-time { color: var(--muted); font-size: 10.5px; width: 64px; flex-shrink: 0; font-family: var(--mono); }
+  .decision-tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; border: 1px solid transparent; letter-spacing: 0.02em; }
+  .decision-tag.EXECUTED { background: rgba(76, 157, 103, 0.14); color: #86d19b; border-color: rgba(76, 157, 103, 0.32); }
+  .decision-tag.BLOCKED { background: rgba(200, 67, 60, 0.14); color: #e29a95; border-color: rgba(200, 67, 60, 0.32); }
+  .decision-tag.ERROR { background: rgba(186, 135, 48, 0.14); color: #e0b471; border-color: rgba(186, 135, 48, 0.32); }
+  .decision-tag.REJECTED { background: rgba(124, 132, 141, 0.14); color: var(--muted); border-color: var(--border-strong); }
+  .decision-tool { font-weight: 600; font-family: var(--mono); }
+  .decision-note { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .section-block { margin-top: 24px; }
+  .toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  .toolbar label { display: flex; align-items: center; gap: 8px; }
+  .toolbar input { background: var(--inset); border: 1px solid var(--border); color: var(--text); padding: 5px 9px; border-radius: 6px; width: 130px; font-size: 12px; font-family: var(--mono); }
+  .toolbar input:focus { outline: none; border-color: var(--accent); }
 </style>
 </head>
 <body>
-<header>
-  <h1>AI-Powered SOC</h1>
-  <div class="status" id="status">connexion...</div>
-</header>
-<main>
-  <div class="toolbar">
-    <label>Approuve en tant que : <input id="approvedBy" value="analyst_1"></label>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo-mark">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M8 1.3l5.2 2v4.1c0 3.7-2.3 6.1-5.2 7.3-2.9-1.2-5.2-3.6-5.2-7.3V3.3l5.2-2z" stroke="#16110b" stroke-width="1.3" stroke-linejoin="round"/><path d="M5.6 8l1.7 1.7L10.5 6" stroke="#16110b" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>AI-POWERED SOC</h1>
+        <div class="tagline">Wazuh + LLM + SOAR</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section-label">Console</div>
+      <a class="nav-item active" data-target="alerts-anchor">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.5a3 3 0 0 0-3 3v1.3C5 7.3 4 8.4 4 10.5h8c0-2.1-1-3.2-1-4.7V4.5a3 3 0 0 0-3-3z" stroke-linejoin="round"/><path d="M6.4 12.5a1.6 1.6 0 0 0 3.2 0"/></svg>
+        Alerts
+      </a>
+      <a class="nav-item" data-target="audit-anchor">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3.2" y="2" width="9.6" height="12" rx="1.3"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg>
+        Audit Log
+      </a>
+      <a class="nav-item" data-target="security-anchor">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.5l4.8 1.8v3.8c0 3.4-2.1 5.6-4.8 6.7-2.7-1.1-4.8-3.3-4.8-6.7V3.3L8 1.5z" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.3 6"/></svg>
+        AI Security
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div>monitored agents: 2</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="welcome-banner">
+      <svg class="mountains" viewBox="0 0 400 140" preserveAspectRatio="xMaxYMax slice">
+        <polygon points="60,140 160,40 230,110 300,55 400,140" fill="#1c1a1f"/>
+        <polygon points="150,140 240,70 300,120 400,90 400,140" fill="#241f22" opacity="0.9"/>
+        <circle cx="330" cy="30" r="46" fill="#ff8a3d" opacity="0.28"/>
+      </svg>
+      <h2>Welcome, Safa 👋</h2>
+      <div class="sub">Here's a live overview of your SOC activity.</div>
+    </div>
+    <div class="topbar">
+      <div class="search-box">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.5"/><path d="M10.3 10.3L14 14" stroke-linecap="round"/></svg>
+        <input id="searchBox" placeholder="Search alerts by host, IP, rule..." oninput="render()">
+      </div>
+      <div class="topbar-right">
+        <div class="status-wrap"><span class="dot" id="statusDot"></span><span id="status">connecting...</span></div>
+        <div class="bell-wrap">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 1.5a3 3 0 0 0-3 3v1.3C5 7.3 4 8.4 4 10.5h8c0-2.1-1-3.2-1-4.7V4.5a3 3 0 0 0-3-3z" stroke-linejoin="round"/><path d="M6.4 12.5a1.6 1.6 0 0 0 3.2 0"/></svg>
+          <span class="bell-badge" id="bellCount">0</span>
+        </div>
+        <div class="avatar-wrap">
+          <div class="avatar-circle">SH</div>
+          <div class="avatar-text"><div class="name">Safa Hichri</div><div class="role">SOC Analyst</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div id="alerts-anchor" class="stats">
+        <div class="stat stat-total">
+          <div class="icon-badge icon-total"><svg viewBox="0 0 16 16" fill="none" stroke="#16110b" stroke-width="1.3"><path d="M8 1.5a3 3 0 0 0-3 3v1.3C5 7.3 4 8.4 4 10.5h8c0-2.1-1-3.2-1-4.7V4.5a3 3 0 0 0-3-3z" stroke-linejoin="round"/><path d="M6.4 12.5a1.6 1.6 0 0 0 3.2 0"/></svg></div>
+          <div><div class="n" id="statTotal">0</div><div class="l">Analyzed</div></div>
+        </div>
+        <div class="stat stat-critical">
+          <div class="icon-badge icon-critical"><svg viewBox="0 0 16 16" fill="none" stroke="#20090a" stroke-width="1.3"><path d="M8 1.5l6 11H2l6-11z" stroke-linejoin="round"/><path d="M8 6.5v3" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.6" fill="#20090a" stroke="none"/></svg></div>
+          <div><div class="n" id="statCritical">0</div><div class="l">Critical</div></div>
+        </div>
+        <div class="stat stat-high">
+          <div class="icon-badge icon-high"><svg viewBox="0 0 16 16" fill="none" stroke="#241209" stroke-width="1.3"><path d="M8 1.5l6 11H2l6-11z" stroke-linejoin="round"/><path d="M8 6.5v3" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.6" fill="#241209" stroke="none"/></svg></div>
+          <div><div class="n" id="statHigh">0</div><div class="l">High</div></div>
+        </div>
+        <div class="stat stat-medium">
+          <div class="icon-badge icon-medium"><svg viewBox="0 0 16 16" fill="none" stroke="#241a08" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 5.3v3" stroke-linecap="round"/><circle cx="8" cy="10.7" r="0.6" fill="#241a08" stroke="none"/></svg></div>
+          <div><div class="n" id="statMedium">0</div><div class="l">Medium</div></div>
+        </div>
+        <div class="stat stat-low">
+          <div class="icon-badge icon-low"><svg viewBox="0 0 16 16" fill="none" stroke="#0e1116" stroke-width="1.3"><path d="M8 1.5l4.8 1.8v3.8c0 3.4-2.1 5.6-4.8 6.7-2.7-1.1-4.8-3.3-4.8-6.7V3.3L8 1.5z" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.3 6"/></svg></div>
+          <div><div class="n" id="statLow">0</div><div class="l">Low</div></div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="panel">
+          <div class="panel-title">Alerts Per Hour</div>
+          <div class="panel-sub">Last 24 hours, real data from the analysis log</div>
+          <svg class="chart" id="lineChart" viewBox="0 0 640 190" width="100%" height="190" style="margin-top:8px;"></svg>
+          <div class="legend">
+            <span><i style="background:var(--accent)"></i>Total alerts</span>
+            <span><i style="background:var(--critical)"></i>Blocked by a guard</span>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Severity Breakdown</div>
+          <div class="panel-sub">Currently displayed alerts</div>
+          <svg id="donutChart" viewBox="0 0 170 170" width="170" height="170" style="display:block;margin:10px auto 0;"></svg>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+
+      <div class="panel-row" id="security-anchor">
+        <div class="panel panel-glow">
+          <div class="panel-title">AI Security — Guard Activity</div>
+          <div class="guard-grid" id="guardStats">
+            <div class="guard-tile">
+              <div class="icon-badge icon-input"><svg viewBox="0 0 16 16" fill="none" stroke="#eaf3fb" stroke-width="1.3"><path d="M8 1.5l4.8 1.8v3.8c0 3.4-2.1 5.6-4.8 6.7-2.7-1.1-4.8-3.3-4.8-6.7V3.3L8 1.5z" stroke-linejoin="round"/><path d="M5.7 8l1.6 1.6L10.3 6"/></svg></div>
+              <div><div class="n" id="gsInput">0</div><div class="l">Input Guard blocks</div></div>
+            </div>
+            <div class="guard-tile">
+              <div class="icon-badge icon-rag"><svg viewBox="0 0 16 16" fill="none" stroke="#f4edfb" stroke-width="1.3"><ellipse cx="8" cy="3.3" rx="4.5" ry="1.6"/><path d="M3.5 3.3v9.4c0 .9 2 1.6 4.5 1.6s4.5-.7 4.5-1.6V3.3"/><path d="M3.5 8c0 .9 2 1.6 4.5 1.6S12.5 8.9 12.5 8"/></svg></div>
+              <div><div class="n" id="gsRag">0</div><div class="l">RAG Context Guard blocks</div></div>
+            </div>
+            <div class="guard-tile">
+              <div class="icon-badge icon-tool"><svg viewBox="0 0 16 16" fill="none" stroke="#eafbf2" stroke-width="1.3"><path d="M10.3 3.1a2.8 2.8 0 0 0-3.7 3.3L2 11l1.8 1.8 4.6-4.6a2.8 2.8 0 0 0 3.3-3.7l-1.8 1.8-1.5-.4-.4-1.5 1.8-1.8z" stroke-linejoin="round"/></svg></div>
+              <div><div class="n" id="gsTool">0</div><div class="l">Tool Misuse Guard blocks</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <label>Approving as: <input id="approvedBy" value="analyst_1"></label>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Recent Alerts</div>
+        <div class="panel-sub">Click a row to see the full AI analysis</div>
+        <div id="alertsTableWrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>Time</th><th>Severity</th><th>Source</th><th>Type</th><th>Description</th><th>Status</th><th></th></tr></thead>
+            <tbody id="alertsTableBody"><tr><td colspan="7"><div class="empty">Waiting for alerts...</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel section-block" id="audit-anchor">
+        <div class="panel-title">Recent Decisions</div>
+        <div id="decisionsLog" style="margin-top:10px;"><div class="empty">No decisions yet.</div></div>
+      </div>
+    </div>
   </div>
-  <div id="alerts">
-    <div class="empty">En attente d'alertes...</div>
-  </div>
-</main>
+</div>
+
+<script>
+document.querySelectorAll(".nav-item").forEach((el) => {
+  el.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+    el.classList.add("active");
+    document.getElementById(el.dataset.target).scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+});
+</script>
 
 <script>
 const API_BASE = "";
 const POLL_INTERVAL_MS = 5000;
 const POLL_BATCH_SIZE = 3;
-const alertsEl = document.getElementById("alerts");
 const statusEl = document.getElementById("status");
+const statusDotEl = document.getElementById("statusDot");
 
 let entries = [];
+let expandedIndex = null;
 
-// Tools that cut off network access -- shown with an extra warning
-// before a human approves them, since they're disruptive to reverse.
 const ISOLATION_TOOLS = new Set(["WazuhIsolateAgent"]);
 
-function badgeClass(riskLevel) {
-  return "badge badge-" + (riskLevel || "LOW");
+function badgeClass(riskLevel) { return "badge badge-" + (riskLevel || "LOW"); }
+
+function entryRiskLevel(entry) {
+  const guardBlocked = entry.analysis && entry.analysis.guard_decision === "BLOCK";
+  if (guardBlocked) return "BLOCKED";
+  return entry.threat_assessment ? entry.threat_assessment.risk_level : "LOW";
+}
+
+// Status reflects only what's directly knowable about this entry --
+// it never claims a later approval happened elsewhere, since no
+// reliable link exists between a row and a specific audit-log entry.
+function entryStatus(entry) {
+  const guardBlocked = entry.analysis && entry.analysis.guard_decision === "BLOCK";
+  if (guardBlocked) return { label: "Blocked", cls: "blocked" };
+  if ((entry.response_plan || []).length > 0) return { label: "Pending Approval", cls: "pending" };
+  return { label: "Cleared", cls: "clear" };
+}
+
+function fmtTime(iso) {
+  if (!iso) return "--";
+  return new Date(iso).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function renderAction(entryIndex, actionIndex, action) {
   const rowId = `action-${entryIndex}-${actionIndex}`;
   const warning = ISOLATION_TOOLS.has(action.tool_name)
-    ? `<div class="warning">⚠ Cette action va isoler l'hôte du réseau.</div>`
+    ? `<div class="warning">⚠ This action will isolate the host from the network.</div>`
     : "";
-
   return `
-    <div class="section-label">PROPOSED ACTION</div>
+    <div class="section-label">Proposed Action</div>
     ${warning}
     <div class="action-row" id="${rowId}">
       <span class="action-name">${action.tool_name}</span>
@@ -180,78 +519,193 @@ function renderAction(entryIndex, actionIndex, action) {
         <option value="analyst">analyst</option>
         <option value="admin">admin</option>
       </select>
-      <button class="approve" onclick="approveAction(${entryIndex}, ${actionIndex})">Approuver et exécuter</button>
+      <input class="justification" id="${rowId}-justification" placeholder="Justification (optional)">
+      <button class="approve" onclick="event.stopPropagation(); approveAction(${entryIndex}, ${actionIndex})">Approve &amp; Execute</button>
+      <button class="reject" onclick="event.stopPropagation(); rejectAction(${entryIndex}, ${actionIndex})">Reject</button>
       <span class="action-result" id="${rowId}-result"></span>
     </div>
   `;
 }
 
-function renderEntry(entry, index) {
+function renderRagContext(analysis) {
+  const results = analysis && analysis.retrieved_results;
+  if (!results || results.length === 0) return "";
+  const rows = results.map((r) => `
+    <div class="rag-context"><span class="score">${(r.score * 100).toFixed(0)}%</span><span class="src">${r.source || r.chunk_id}</span></div>
+  `).join("");
+  return `<div class="section-label">RAG Knowledge Context</div>${rows}`;
+}
+
+function renderDetail(entry, index) {
   const alert = entry.alert;
   const ta = entry.threat_assessment;
   const analysis = entry.analysis;
   const guardBlocked = analysis && analysis.guard_decision === "BLOCK";
 
   if (!alert) {
-    return `
-      <div class="card">
-        <div class="card-head">
-          <span class="rule">Alerte non normalisée</span>
-          <span class="badge badge-BLOCKED">ERROR</span>
-        </div>
-        <div class="meta">${entry.normalization_error || ""}</div>
-      </div>
-    `;
+    return `<div class="detail-box"><div class="summary">${entry.normalization_error || "Normalization error."}</div></div>`;
   }
-
-  const head = `
-    <div class="card-head">
-      <div>
-        <div class="rule">${alert.rule_description} <span class="meta">(rule ${alert.rule_id}, severity ${alert.severity})</span></div>
-        <div class="meta">${alert.agent_name} · ${alert.source_ip || "no source ip"} · ${alert.timestamp}</div>
-      </div>
-      <span class="badge ${badgeClass(guardBlocked ? "BLOCKED" : (ta ? ta.risk_level : "LOW"))}">${guardBlocked ? "BLOCKED" : (ta ? ta.risk_level : "LOW")}</span>
-    </div>
-  `;
-
-  // A guard block happens automatically, in real time, before the LLM
-  // ever sees the alert -- there is nothing to approve here, so no
-  // action UI is shown, only what blocked it and why.
   if (guardBlocked) {
-    return `
-      <div class="card">
-        ${head}
-        <div class="section-label">GUARD DECISION</div>
-        <div class="summary">
-          Blocked by <strong>${analysis.guard_layer || "unknown guard"}</strong> --
-          ${analysis.guard_reason || "no reason recorded"}
-        </div>
-      </div>
-    `;
+    return `<div class="detail-box">
+      <div class="section-label">Guard Decision</div>
+      <div class="summary">Blocked by <strong>${analysis.guard_layer || "unknown guard"}</strong> -- ${analysis.guard_reason || "no reason recorded"}</div>
+    </div>`;
   }
+  const actions = (entry.response_plan || []).map((action, i) => renderAction(index, i, action)).join("");
+  return `<div class="detail-box">
+    ${ta ? `<div class="section-label">AI Threat Assessment</div><div class="summary"><strong>${ta.threat_type}</strong> -- ${ta.summary}</div>`
+         : (analysis && analysis.response ? `<div class="summary">${analysis.response}</div>` : "")}
+    ${renderRagContext(analysis)}
+    ${actions ? `<div class="actions">${actions}</div>` : ""}
+  </div>`;
+}
 
-  const actions = (entry.response_plan || [])
-    .map((action, i) => renderAction(index, i, action))
-    .join("");
+function toggleExpand(index) {
+  expandedIndex = expandedIndex === index ? null : index;
+  render();
+}
 
-  return `
-    <div class="card">
-      ${head}
-      ${ta ? `
-        <div class="section-label">AI THREAT ASSESSMENT</div>
-        <div class="summary"><strong>${ta.threat_type}</strong> -- ${ta.summary}</div>
-      ` : (analysis && analysis.response ? `<div class="summary">${analysis.response}</div>` : "")}
-      ${actions ? `<div class="actions">${actions}</div>` : ""}
-    </div>
-  `;
+function matchesSearch(entry, query) {
+  if (!query) return true;
+  const alert = entry.alert;
+  if (!alert) return false;
+  const haystack = [
+    alert.rule_description, alert.agent_name, alert.source_ip,
+    entry.threat_assessment ? entry.threat_assessment.threat_type : "",
+  ].join(" ").toLowerCase();
+  return haystack.includes(query.toLowerCase());
 }
 
 function render() {
-  if (entries.length === 0) {
-    alertsEl.innerHTML = `<div class="empty">En attente d'alertes...</div>`;
+  const body = document.getElementById("alertsTableBody");
+  const query = document.getElementById("searchBox").value.trim();
+  const filtered = entries.filter((e) => matchesSearch(e, query));
+
+  const counts = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
+  let pendingCount = 0;
+  for (const entry of entries) {
+    const level = entryRiskLevel(entry);
+    if (level in counts) counts[level] += 1;
+    if (entryStatus(entry).cls === "pending") pendingCount += 1;
+  }
+  document.getElementById("statTotal").textContent = entries.length;
+  document.getElementById("statCritical").textContent = counts.CRITICAL;
+  document.getElementById("statHigh").textContent = counts.HIGH;
+  document.getElementById("statMedium").textContent = counts.MEDIUM;
+  document.getElementById("statLow").textContent = counts.LOW;
+  document.getElementById("bellCount").textContent = pendingCount;
+  renderDonut(counts);
+
+  if (filtered.length === 0) {
+    body.innerHTML = `<tr><td colspan="7"><div class="empty">${entries.length === 0 ? "Waiting for alerts..." : "No alerts match your search."}</div></td></tr>`;
     return;
   }
-  alertsEl.innerHTML = entries.map(renderEntry).join("");
+
+  let rows = "";
+  filtered.forEach((entry) => {
+    const index = entries.indexOf(entry);
+    const risk = entryRiskLevel(entry);
+    const alert = entry.alert;
+    const status = entryStatus(entry);
+    const type = entry.threat_assessment ? entry.threat_assessment.threat_type
+      : (entry.analysis && entry.analysis.guard_layer !== "none" ? entry.analysis.guard_layer : "--");
+    const desc = alert ? alert.rule_description : (entry.normalization_error || "Error");
+    const source = alert ? (alert.source_ip || "--") : "--";
+    const time = alert ? fmtTime(alert.timestamp) : "--";
+
+    rows += `
+      <tr class="alert-row ${expandedIndex === index ? "expanded" : ""}" onclick="toggleExpand(${index})">
+        <td class="mono">${time}</td>
+        <td><span class="badge ${badgeClass(risk)}">${risk}</span></td>
+        <td class="mono">${source}</td>
+        <td>${type}</td>
+        <td>${desc}</td>
+        <td><span class="status-tag ${status.cls}">${status.label}</span></td>
+        <td class="chev">${expandedIndex === index ? "&#9662;" : "&#9656;"}</td>
+      </tr>
+    `;
+    if (expandedIndex === index) {
+      rows += `<tr><td colspan="7">${renderDetail(entry, index)}</td></tr>`;
+    }
+  });
+  body.innerHTML = rows;
+}
+
+function renderDonut(counts) {
+  const svg = document.getElementById("donutChart");
+  const legendEl = document.getElementById("donutLegend");
+  const order = [
+    ["CRITICAL", "var(--critical)"], ["HIGH", "var(--high)"],
+    ["MEDIUM", "var(--medium)"], ["LOW", "var(--low)"],
+  ];
+  const total = counts.LOW + counts.MEDIUM + counts.HIGH + counts.CRITICAL;
+  const R = 66, CX = 85, CY = 85, STROKE = 20;
+  const circumference = 2 * Math.PI * R;
+
+  let offset = 0, circles = "";
+  for (const [key, color] of order) {
+    const val = counts[key] || 0;
+    if (val === 0) continue;
+    const frac = total > 0 ? val / total : 0;
+    const dash = frac * circumference;
+    circles += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${color}"
+      stroke-width="${STROKE}" stroke-dasharray="${dash.toFixed(1)} ${circumference.toFixed(1)}"
+      stroke-dashoffset="${(-offset).toFixed(1)}" transform="rotate(-90 ${CX} ${CY})"/>`;
+    offset += dash;
+  }
+  svg.innerHTML = `
+    ${circles || `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="var(--border)" stroke-width="${STROKE}"/>`}
+    <text x="${CX}" y="${CY - 3}" text-anchor="middle" style="fill:var(--text-strong);font-size:20px;font-weight:800;">${total}</text>
+    <text x="${CX}" y="${CY + 13}" text-anchor="middle" style="fill:var(--muted);font-size:9px;">TOTAL</text>
+  `;
+  legendEl.innerHTML = order.map(([key, color]) => {
+    const val = counts[key] || 0;
+    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0.0";
+    return `<div class="donut-legend-row"><span class="k"><i style="background:${color}"></i>${key}</span><span class="v">${val} (${pct}%)</span></div>`;
+  }).join("");
+}
+
+function renderLineChart(analysisLog) {
+  const svg = document.getElementById("lineChart");
+  const W = 640, H = 190, PAD = 24;
+  const now = new Date();
+  const buckets = 24;
+  const totals = new Array(buckets).fill(0);
+  const blocked = new Array(buckets).fill(0);
+
+  for (const e of analysisLog) {
+    const t = new Date(e.timestamp);
+    const hoursAgo = Math.floor((now - t) / (60 * 60 * 1000));
+    if (hoursAgo >= 0 && hoursAgo < buckets) {
+      const idx = buckets - 1 - hoursAgo;
+      totals[idx]++;
+      if (e.guard_decision === "BLOCK") blocked[idx]++;
+    }
+  }
+  const maxVal = Math.max(1, ...totals);
+  const x = (i) => PAD + (i / (buckets - 1)) * (W - 2 * PAD);
+  const y = (v) => H - PAD - (v / maxVal) * (H - 2 * PAD);
+  const path = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const area = (arr) => `${path(arr)} L ${x(buckets - 1).toFixed(1)} ${H - PAD} L ${x(0).toFixed(1)} ${H - PAD} Z`;
+
+  let gridLines = "";
+  for (let g = 0; g <= 4; g++) {
+    const gy = PAD + (g / 4) * (H - 2 * PAD);
+    gridLines += `<line class="chart-grid" x1="${PAD}" y1="${gy.toFixed(1)}" x2="${W - PAD}" y2="${gy.toFixed(1)}"/>`;
+    gridLines += `<text x="2" y="${(gy + 3).toFixed(1)}">${Math.round(maxVal * (1 - g / 4))}</text>`;
+  }
+  let xLabels = "";
+  for (let i = 0; i < buckets; i += 4) {
+    const hourLabel = new Date(now - (buckets - 1 - i) * 3600000).getHours().toString().padStart(2, "0") + "h";
+    xLabels += `<text x="${x(i).toFixed(1)}" y="${H - 4}">${hourLabel}</text>`;
+  }
+  svg.innerHTML = `
+    ${gridLines}
+    <path class="chart-area" fill="var(--accent)" d="${area(totals)}"></path>
+    <path class="chart-line" d="${path(totals)}"></path>
+    <path class="chart-line blocked" d="${path(blocked)}"></path>
+    ${xLabels}
+  `;
 }
 
 async function approveAction(entryIndex, actionIndex) {
@@ -260,39 +714,106 @@ async function approveAction(entryIndex, actionIndex) {
   const rowId = `action-${entryIndex}-${actionIndex}`;
   const role = document.getElementById(`${rowId}-role`).value;
   const approvedBy = document.getElementById("approvedBy").value || "unknown";
+  const justification = document.getElementById(`${rowId}-justification`).value;
   const resultEl = document.getElementById(`${rowId}-result`);
-
   resultEl.textContent = "...";
   resultEl.className = "action-result";
-
   try {
     const response = await fetch(`${API_BASE}/actions/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        tool_name: action.tool_name,
-        tool_parameters: action.tool_parameters,
-        reason: action.reason,
-        risk_level: action.risk_level,
-        approved_by: approvedBy,
-        approver_role: role,
-        confirmation_token: action.confirmation_token,
+        tool_name: action.tool_name, tool_parameters: action.tool_parameters,
+        reason: action.reason, risk_level: action.risk_level,
+        approved_by: approvedBy, approver_role: role,
+        confirmation_token: action.confirmation_token, justification: justification,
       }),
     });
-
     const data = await response.json();
-
     if (!response.ok) {
-      resultEl.textContent = data.detail || "refusé";
+      resultEl.textContent = data.detail || "rejected";
       resultEl.classList.add("result-BLOCKED");
       return;
     }
-
     resultEl.textContent = data.status;
     resultEl.classList.add(`result-${data.status}`);
   } catch (err) {
-    resultEl.textContent = "erreur réseau";
+    resultEl.textContent = "network error";
     resultEl.classList.add("result-ERROR");
+  } finally {
+    refreshDecisionsLog();
+  }
+}
+
+async function rejectAction(entryIndex, actionIndex) {
+  const entry = entries[entryIndex];
+  const action = entry.response_plan[actionIndex];
+  const rowId = `action-${entryIndex}-${actionIndex}`;
+  const reviewedBy = document.getElementById("approvedBy").value || "unknown";
+  const justification = document.getElementById(`${rowId}-justification`).value;
+  const resultEl = document.getElementById(`${rowId}-result`);
+  resultEl.textContent = "...";
+  resultEl.className = "action-result";
+  try {
+    const response = await fetch(`${API_BASE}/actions/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tool_name: action.tool_name, tool_parameters: action.tool_parameters,
+        reason: action.reason, risk_level: action.risk_level,
+        reviewed_by: reviewedBy, justification: justification,
+      }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    resultEl.textContent = "REJECTED";
+    resultEl.classList.add("result-BLOCKED");
+  } catch (err) {
+    resultEl.textContent = "network error";
+    resultEl.classList.add("result-ERROR");
+  } finally {
+    refreshDecisionsLog();
+  }
+}
+
+async function refreshDecisionsLog() {
+  const el = document.getElementById("decisionsLog");
+  try {
+    const response = await fetch(`${API_BASE}/audit/log?limit=15`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const log = await response.json();
+    if (log.length === 0) {
+      el.innerHTML = `<div class="empty">No decisions yet.</div>`;
+      return;
+    }
+    el.innerHTML = log.map((e) => {
+      const tag = e.decision || e.status || "?";
+      const note = e.justification || e.user_instruction || "";
+      const time = new Date(e.timestamp * 1000).toLocaleTimeString();
+      return `<div class="decision-row">
+        <span class="decision-time">${time}</span>
+        <span class="decision-tag ${tag}">${tag}</span>
+        <span class="decision-tool">${e.tool_name}</span>
+        <span class="decision-note">${note}</span>
+      </div>`;
+    }).join("");
+  } catch (err) {
+    // Non-critical panel -- keep last rendered state on transient failure.
+  }
+}
+
+async function refreshOverview() {
+  try {
+    const [analysisLog, auditLog] = await Promise.all([
+      fetch(`${API_BASE}/analysis/log?limit=500`).then((r) => r.json()),
+      fetch(`${API_BASE}/audit/log?limit=500`).then((r) => r.json()),
+    ]);
+    const inputBlocks = analysisLog.filter((e) => e.guard_decision === "BLOCK" && e.guard_layer === "input_guard").length;
+    const ragBlocks = analysisLog.filter((e) => e.guard_decision === "BLOCK" && e.guard_layer === "rag_context_guard").length;
+    const toolBlocks = auditLog.filter((e) => e.status === "BLOCKED").length;
+    document.getElementById("gsInput").textContent = inputBlocks;
+    document.getElementById("gsRag").textContent = ragBlocks;
+    document.getElementById("gsTool").textContent = toolBlocks;
+    renderLineChart(analysisLog);
+  } catch (err) {
+    // Non-critical panel -- keep last known values on failure.
   }
 }
 
@@ -302,21 +823,22 @@ async function approveAction(entryIndex, actionIndex) {
 // finishes, piling up overlapping requests -- so instead each poll
 // schedules the next one only after it completes (success or not).
 async function poll() {
-  statusEl.textContent = "analyse en cours...";
-
+  statusEl.textContent = "analyzing...";
+  statusDotEl.className = "dot busy";
   try {
     const response = await fetch(`${API_BASE}/alerts/poll?limit=${POLL_BATCH_SIZE}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const newEntries = await response.json();
-
     if (newEntries.length > 0) {
       entries = [...newEntries.reverse(), ...entries];
       render();
+      refreshOverview();
     }
-
-    statusEl.textContent = `connecté · dernière vérification ${new Date().toLocaleTimeString()}`;
+    statusEl.textContent = `connected · last check ${new Date().toLocaleTimeString()}`;
+    statusDotEl.className = "dot live";
   } catch (err) {
-    statusEl.textContent = `déconnecté (${err.message})`;
+    statusEl.textContent = `disconnected (${err.message})`;
+    statusDotEl.className = "dot down";
   } finally {
     setTimeout(poll, POLL_INTERVAL_MS);
   }
@@ -324,6 +846,9 @@ async function poll() {
 
 render();
 poll();
+refreshDecisionsLog();
+refreshOverview();
+setInterval(refreshOverview, 20000);
 </script>
 </body>
 </html>

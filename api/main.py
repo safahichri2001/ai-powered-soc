@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,15 +11,19 @@ from fastapi.staticfiles import StaticFiles
 from agent.analysis.approval_policy import PolicyError
 from agent.analysis.live_alert_investigator import LiveAlertInvestigator
 from agent.analysis.soar_playbook import ProposedAction, execute_proposed_action
+from agent.integrations.wazuh_client import WazuhClientError, WazuhManagerClient
 from agent.tools.executor import ToolExecutor
 from api.dependencies import get_investigator, get_tool_executor
 from api.schemas import (
     ApproveActionRequest,
     InvestigationResult,
+    RejectActionRequest,
     ToolExecutionResultOut,
     proposed_action_out,
     tool_execution_result_out,
 )
+
+DECISIONS_LOG_PATH = Path("logs/analyst_decisions.jsonl")
 
 app = FastAPI(
     title="AI-Powered SOC API",
@@ -47,6 +52,21 @@ def _to_investigation_result(entry: dict[str, Any]) -> InvestigationResult:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/agents/count")
+def get_agents_count() -> dict[str, Any]:
+    """
+    Real count of Wazuh-monitored agents, for the dashboard's
+    "Agents surveillés" tile -- queries the Manager API directly
+    rather than hardcoding a number that would go stale.
+    """
+
+    try:
+        agents = WazuhManagerClient().list_agents()
+        return {"count": len(agents), "available": True}
+    except WazuhClientError:
+        return {"count": None, "available": False}
 
 
 @app.get("/alerts/recent", response_model=list[InvestigationResult])
@@ -132,11 +152,67 @@ def approve_action(
             approved_by=request.approved_by,
             approver_role=request.approver_role,
             confirmation_token=request.confirmation_token,
+            justification=request.justification,
         )
     except PolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     return tool_execution_result_out(result)
+
+
+@app.post("/actions/reject")
+def reject_action(request: RejectActionRequest) -> dict[str, Any]:
+    """
+    Record that a human reviewed a proposed action and declined to
+    approve it. Nothing executes and no guard/RBAC check applies --
+    declining to act is always safe -- this only appends an entry
+    to DECISIONS_LOG_PATH so the decision has an audit trail too,
+    not just approvals.
+    """
+
+    DECISIONS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = {
+        "timestamp": time.time(),
+        "decision": "REJECTED",
+        "tool_name": request.tool_name,
+        "tool_parameters": request.tool_parameters,
+        "reason": request.reason,
+        "risk_level": request.risk_level,
+        "reviewed_by": request.reviewed_by,
+        "justification": request.justification,
+    }
+
+    with DECISIONS_LOG_PATH.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(entry) + "\n")
+
+    return entry
+
+
+@app.get("/audit/log")
+def get_audit_log(
+    limit: int = 50,
+    tool_executor: ToolExecutor = Depends(get_tool_executor),
+) -> list[dict[str, Any]]:
+    """
+    Merges ToolExecutor's own audit log (every guarded run attempt,
+    EXECUTED/BLOCKED/ERROR) with DECISIONS_LOG_PATH (REJECTED
+    entries, which never reach ToolExecutor since nothing runs),
+    newest first -- one real decision trail for the dashboard
+    instead of two separate files.
+    """
+
+    entries: list[dict[str, Any]] = []
+
+    for path in (tool_executor.audit_log_path, DECISIONS_LOG_PATH):
+        if not path.exists():
+            continue
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        entries.extend(json.loads(line) for line in lines if line.strip())
+
+    entries.sort(key=lambda entry: entry["timestamp"], reverse=True)
+    return entries[:limit]
 
 
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"

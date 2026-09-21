@@ -74,6 +74,23 @@ class ApproveActionRequest(BaseModel):
     approved_by: str
     approver_role: str
     confirmation_token: str
+    justification: str = ""
+
+
+class RejectActionRequest(BaseModel):
+    """
+    Body of POST /actions/reject. No confirmation_token or
+    approver_role needed -- nothing executes, so there is no guard
+    or RBAC check to run; this only records that a human reviewed
+    the proposed action and chose not to approve it, and why.
+    """
+
+    tool_name: str
+    tool_parameters: dict[str, Any]
+    reason: str
+    risk_level: RiskLevel
+    reviewed_by: str
+    justification: str = ""
 
 
 class ToolExecutionResultOut(BaseModel):
