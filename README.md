@@ -119,6 +119,7 @@ Screenshots and a live demo from the lab (real Wazuh alerts, real LLM
 analysis, real Active Response — no mocked data).
 
 ![Full detection-to-response demo](docs/demo.gif)
+
 *A real SSH brute-force attack, detected and classified CRITICAL, isolated only after a role-gated human approval.*
 
 ![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
