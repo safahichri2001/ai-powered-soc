@@ -248,36 +248,50 @@ class WazuhIndexerClient:
         index_pattern: str = "wazuh-alerts-*",
         since: str | None = None,
         ascending: bool = False,
+        exclude_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search alerts. `since` (an ISO8601 timestamp) restricts
-        results to alerts strictly after it, for watermark-based
+        results to alerts at or after it, for watermark-based
         polling -- pass `ascending=True` alongside it so results
         come back oldest-first and a caller can safely advance its
         watermark to the last item returned.
 
-        Known limitation: filtering is a plain `timestamp > since`
-        range, not a compound (timestamp, id) cursor, so two alerts
-        sharing the exact same timestamp at a page boundary could
-        in principle be split across polls. Not addressed here.
+        `since` is inclusive (`gte`, not `gt`): multiple alerts can
+        share the exact same timestamp (observed in practice -- a
+        burst of alerts from one event can land on the same
+        millisecond), and a strict `gt` would permanently drop
+        whichever of them didn't fit in the previous page. Pass the
+        IDs already consumed at that exact timestamp via
+        `exclude_ids` so this call doesn't re-return them -- see
+        LiveAlertInvestigator's watermark handling, which tracks
+        exactly that.
         """
 
         self.config.require_configured("Wazuh Indexer")
 
         filters: list[dict[str, Any]] = []
+        must_not: list[dict[str, Any]] = []
 
         if query:
             filters.append({"query_string": {"query": query}})
 
         if since:
-            filters.append({"range": {"timestamp": {"gt": since}}})
+            filters.append({"range": {"timestamp": {"gte": since}}})
 
-        if not filters:
+        if exclude_ids:
+            must_not.append({"terms": {"id": exclude_ids}})
+
+        if not filters and not must_not:
             search_query: dict[str, Any] = {"match_all": {}}
-        elif len(filters) == 1:
+        elif not must_not and len(filters) == 1:
             search_query = filters[0]
         else:
-            search_query = {"bool": {"must": filters}}
+            search_query = {"bool": {}}
+            if filters:
+                search_query["bool"]["must"] = filters
+            if must_not:
+                search_query["bool"]["must_not"] = must_not
 
         body: dict[str, Any] = {
             "size": limit,

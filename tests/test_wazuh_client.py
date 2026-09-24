@@ -246,7 +246,7 @@ def test_search_alerts_with_since_only_uses_range_filter():
 
     _, kwargs = mock_post.call_args
     assert kwargs["json"]["query"] == {
-        "range": {"timestamp": {"gt": "2026-09-08T10:00:00Z"}}
+        "range": {"timestamp": {"gte": "2026-09-08T10:00:00Z"}}
     }
     assert kwargs["json"]["sort"] == [{"timestamp": {"order": "asc"}}]
 
@@ -269,12 +269,40 @@ def test_search_alerts_with_query_and_since_combines_with_bool_must():
         "bool": {
             "must": [
                 {"query_string": {"query": "agent.name:Kali"}},
-                {"range": {"timestamp": {"gt": "2026-09-08T10:00:00Z"}}},
+                {"range": {"timestamp": {"gte": "2026-09-08T10:00:00Z"}}},
             ]
         }
     }
     # ascending defaults to False when not explicitly requested
     assert kwargs["json"]["sort"] == [{"timestamp": {"order": "desc"}}]
+
+
+def test_search_alerts_with_exclude_ids_adds_must_not_terms():
+    config = WazuhConfig("https://10.0.0.10:9200", "admin", "admin", False)
+    client = WazuhIndexerClient(config=config)
+
+    search_response = _response({"hits": {"hits": []}})
+
+    with patch.object(
+        requests.Session, "post", return_value=search_response
+    ) as mock_post:
+        client.search_alerts(
+            since="2026-09-08T10:00:00Z",
+            ascending=True,
+            exclude_ids=["123.456", "123.457"],
+        )
+
+    _, kwargs = mock_post.call_args
+    assert kwargs["json"]["query"] == {
+        "bool": {
+            "must": [
+                {"range": {"timestamp": {"gte": "2026-09-08T10:00:00Z"}}},
+            ],
+            "must_not": [
+                {"terms": {"id": ["123.456", "123.457"]}},
+            ],
+        }
+    }
 
 
 # ============================================================

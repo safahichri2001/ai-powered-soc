@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -226,7 +228,11 @@ def test_first_call_has_no_watermark(tmp_path: Path):
     investigator.investigate_new(limit=10, query="agent.name:Kali")
 
     indexer.search_alerts.assert_called_once_with(
-        query="agent.name:Kali", limit=10, since=None, ascending=True
+        query="agent.name:Kali",
+        limit=10,
+        since=None,
+        ascending=True,
+        exclude_ids=[],
     )
 
 
@@ -243,8 +249,133 @@ def test_watermark_persists_and_is_reused_on_next_call(tmp_path: Path):
     investigator.investigate_new(limit=10)
 
     indexer.search_alerts.assert_called_with(
-        query="", limit=10, since=RAW_ALERT["timestamp"], ascending=True
+        query="",
+        limit=10,
+        since=RAW_ALERT["timestamp"],
+        ascending=True,
+        exclude_ids=[],
     )
+
+
+def test_watermark_excludes_ids_already_seen_at_the_same_timestamp(
+    tmp_path: Path,
+):
+    """
+    Multiple alerts can share the exact same timestamp (a burst
+    landing on the same millisecond). `since` is inclusive, so the
+    IDs already consumed at that timestamp must be excluded on the
+    next call -- otherwise they'd be re-analyzed forever, and if the
+    burst is larger than one page, the ones that didn't fit would
+    never be reached without this.
+    """
+
+    shared_timestamp = "2026-09-08T10:19:34.269+0000"
+    first_alert = {**RAW_ALERT, "id": "1.111", "timestamp": shared_timestamp}
+    second_alert = {**RAW_ALERT, "id": "1.222", "timestamp": shared_timestamp}
+
+    investigator, indexer = _build_investigator(tmp_path, [first_alert])
+    investigator.investigate_new(limit=10)
+
+    saved = json.loads(investigator.state_path.read_text(encoding="utf-8"))
+    assert saved["last_processed_timestamp"] == shared_timestamp
+    assert saved["last_processed_ids"] == ["1.111"]
+
+    indexer.search_alerts.return_value = [second_alert]
+    investigator.investigate_new(limit=10)
+
+    indexer.search_alerts.assert_called_with(
+        query="",
+        limit=10,
+        since=shared_timestamp,
+        ascending=True,
+        exclude_ids=["1.111"],
+    )
+
+    saved = json.loads(investigator.state_path.read_text(encoding="utf-8"))
+    assert set(saved["last_processed_ids"]) == {"1.111", "1.222"}
+
+
+class _SlowStatefulIndexer:
+    """
+    Mimics enough real Indexer behavior (respects `since`/
+    `exclude_ids`) to make a concurrency test meaningful, and sleeps
+    inside search_alerts to reliably widen the race window between
+    two overlapping investigate_new() calls.
+    """
+
+    def __init__(self, alert: dict[str, Any], delay_seconds: float = 0.05) -> None:
+        self._alert = alert
+        self._delay_seconds = delay_seconds
+        self.call_count = 0
+
+    def search_alerts(
+        self,
+        query: str = "",
+        limit: int = 10,
+        since: str | None = None,
+        ascending: bool = False,
+        exclude_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        self.call_count += 1
+        time.sleep(self._delay_seconds)
+
+        exclude_ids = exclude_ids or []
+
+        if since is not None and self._alert["timestamp"] < since:
+            return []
+
+        if self._alert["id"] in exclude_ids:
+            return []
+
+        return [self._alert]
+
+
+def test_investigate_new_is_thread_safe_against_concurrent_pollers(
+    tmp_path: Path,
+):
+    """
+    Two overlapping investigate_new() calls -- e.g. two open dashboard
+    tabs each polling on their own 5s timer, both landing on the API
+    at nearly the same moment -- must not both analyze the same
+    alert. Without the lock in investigate_new(), both threads would
+    read the same pre-update watermark and each independently fetch,
+    LLM-analyze, and log the same alert.
+    """
+
+    alert = {
+        **RAW_ALERT,
+        "id": "9.1",
+        "timestamp": "2026-09-08T10:19:34.269+0000",
+    }
+    indexer = _SlowStatefulIndexer(alert)
+    pipeline = _build_pipeline(FakeLLM())
+    investigator = LiveAlertInvestigator(
+        indexer=indexer,
+        rag_pipeline=pipeline,
+        state_path=tmp_path / "state.json",
+        analysis_log_path=tmp_path / "analysis_log.jsonl",
+    )
+
+    results: list[list[Any] | None] = [None, None]
+
+    def call(index: int) -> None:
+        results[index] = investigator.investigate_new(limit=10)
+
+    t1 = threading.Thread(target=call, args=(0,))
+    t2 = threading.Thread(target=call, args=(1,))
+    t1.start()
+    time.sleep(0.01)  # let t1 acquire the lock first
+    t2.start()
+    t1.join()
+    t2.join()
+
+    total_analyzed = len(results[0]) + len(results[1])
+    assert total_analyzed == 1
+
+    lines = investigator.analysis_log_path.read_text(
+        encoding="utf-8"
+    ).strip().splitlines()
+    assert len(lines) == 1
 
 
 def test_watermark_advances_past_malformed_alert(tmp_path: Path):

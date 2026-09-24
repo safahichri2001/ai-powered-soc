@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from agent.preprocessing.normalizer import normalize_wazuh_alert
 from agent.prompts.threat_assessment_prompt import build_threat_assessment_prompt
 from agent.security.input_guard import InputGuard
 from agent.security.null_guard import NullGuard
+from agent.security.rag_context_guard import RAGContextGuard
 from agent.tools.executor import ToolExecutor
 from rag.pipeline import RAGPipeline
 from rag.retrieval.retriever import Retriever
@@ -36,6 +38,11 @@ def build_alert_analysis_pipeline(
     separate benign alerts from injected ones (the score ranges
     overlap). InputGuard stays active and is the layer actually
     carrying detection for this path.
+
+    RAGContextGuard is built explicitly here (rather than left to
+    RAGPipeline's own default) so it reuses the retriever's already-
+    loaded embedding model instead of loading a second, independent
+    copy of the same sentence-transformer.
     """
 
     return RAGPipeline(
@@ -43,6 +50,9 @@ def build_alert_analysis_pipeline(
         llm=llm or OllamaClient(),
         input_guard=InputGuard(),
         semantic_guard=NullGuard(),
+        rag_context_guard=RAGContextGuard(
+            model=retriever.embedder.model, threshold=0.56
+        ),
         prompt_builder=build_threat_assessment_prompt,
     )
 
@@ -119,6 +129,19 @@ class LiveAlertInvestigator:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.analysis_log_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # FastAPI runs each request in its own thread, and nothing
+        # stops two callers (e.g. two open dashboard tabs, each
+        # polling on their own timer) from calling investigate_new()
+        # at nearly the same moment. Without this, both could read
+        # the same watermark before either writes it back, both fetch
+        # and LLM-analyze the same alerts independently, and both
+        # append their own (possibly differing -- LLM output isn't
+        # perfectly deterministic) result to the analysis log. This
+        # lock serializes the whole read-fetch-analyze-write cycle so
+        # the second caller always sees the first caller's advanced
+        # watermark.
+        self._poll_lock = threading.Lock()
+
     def investigate_recent(
         self,
         limit: int = 5,
@@ -151,27 +174,54 @@ class LiveAlertInvestigator:
         e.g. from a scheduler.
         """
 
-        watermark = self._load_watermark()
+        with self._poll_lock:
+            watermark_timestamp, watermark_ids = self._load_watermark()
 
-        raw_alerts = self.indexer.search_alerts(
-            query=query,
-            limit=limit,
-            since=watermark,
-            ascending=True,
-        )
+            raw_alerts = self.indexer.search_alerts(
+                query=query,
+                limit=limit,
+                since=watermark_timestamp,
+                ascending=True,
+                exclude_ids=watermark_ids,
+            )
 
-        results = self._investigate(raw_alerts, top_k=top_k)
+            results = self._investigate(raw_alerts, top_k=top_k)
 
-        for entry in results:
-            self._log_analysis(entry)
+            for entry in results:
+                self._log_analysis(entry)
 
-        if raw_alerts:
-            last_timestamp = raw_alerts[-1].get("timestamp")
+            if raw_alerts:
+                last_timestamp = raw_alerts[-1].get("timestamp")
 
-            if last_timestamp:
-                self._save_watermark(last_timestamp)
+                if last_timestamp:
+                    # Multiple alerts can share the exact same timestamp
+                    # (a burst landing on the same millisecond -- observed
+                    # in practice, not hypothetical). `since` is inclusive
+                    # (gte), so re-querying from `last_timestamp` alone
+                    # would re-return every alert at that instant forever;
+                    # tracking their IDs here and excluding them next call
+                    # is what makes that safe without ever dropping an
+                    # alert that didn't fit in this page.
+                    ids_at_last_timestamp = [
+                        alert["id"]
+                        for alert in raw_alerts
+                        if alert.get("timestamp") == last_timestamp
+                        and alert.get("id")
+                    ]
 
-        return results
+                    if last_timestamp == watermark_timestamp:
+                        # Still draining the same burst as last call --
+                        # accumulate onto the previous exclusion set
+                        # rather than replacing it, or an alert from
+                        # *this* timestamp seen two calls ago would fall
+                        # out of the exclusion list and be re-analyzed.
+                        seen = dict.fromkeys(watermark_ids)
+                        seen.update(dict.fromkeys(ids_at_last_timestamp))
+                        ids_at_last_timestamp = list(seen)
+
+                    self._save_watermark(last_timestamp, ids_at_last_timestamp)
+
+            return results
 
     def _investigate(
         self,
@@ -288,20 +338,28 @@ class LiveAlertInvestigator:
 
         return "\n\n" + "\n".join(lines)
 
-    def _load_watermark(self) -> str | None:
+    def _load_watermark(self) -> tuple[str | None, list[str]]:
         if not self.state_path.exists():
-            return None
+            return None, []
 
         try:
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
-            return data.get("last_processed_timestamp")
+            return (
+                data.get("last_processed_timestamp"),
+                data.get("last_processed_ids", []),
+            )
 
         except (json.JSONDecodeError, OSError):
-            return None
+            return None, []
 
-    def _save_watermark(self, timestamp: str) -> None:
+    def _save_watermark(self, timestamp: str, ids: list[str]) -> None:
         self.state_path.write_text(
-            json.dumps({"last_processed_timestamp": timestamp}),
+            json.dumps(
+                {
+                    "last_processed_timestamp": timestamp,
+                    "last_processed_ids": ids,
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -316,6 +374,7 @@ class LiveAlertInvestigator:
 
         record = {
             "timestamp": entry["raw_alert"].get("timestamp"),
+            "alert_id": entry["raw_alert"].get("id"),
             "rule_id": alert.rule_id if alert else None,
             "rule_description": alert.rule_description if alert else None,
             "severity": alert.severity if alert else None,

@@ -58,6 +58,7 @@ class RAGContextGuard:
             "text_attack_train.json"
         ),
         patterns: tuple[str, ...] | None = None,
+        model: SentenceTransformer | None = None,
     ) -> None:
         """
         Initialize the RAG context guard.
@@ -65,6 +66,7 @@ class RAGContextGuard:
         Args:
             model_name:
                 Sentence-Transformer model used for semantic matching.
+                Ignored if `model` is given.
 
             threshold:
                 Initial semantic similarity threshold.
@@ -76,9 +78,16 @@ class RAGContextGuard:
 
             patterns:
                 Optional custom explicit detection patterns.
+
+            model:
+                An already-loaded SentenceTransformer to reuse instead
+                of loading a second copy of the same model -- e.g. the
+                one a Retriever already holds. Same model architecture
+                as `model_name` is assumed; passing a different one is
+                the caller's responsibility.
         """
 
-        self.model = SentenceTransformer(
+        self.model = model or SentenceTransformer(
             model_name
         )
 
