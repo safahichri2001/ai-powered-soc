@@ -115,8 +115,11 @@ while `1gn0r3` and `unl0ck` still get caught.
 
 ## Dashboard
 
-Screenshots from the live lab (real Wazuh alerts, real LLM analysis, real
-Active Response — no mocked data).
+Screenshots and a live demo from the lab (real Wazuh alerts, real LLM
+analysis, real Active Response — no mocked data).
+
+![Full detection-to-response demo](docs/demo.gif)
+*A real SSH brute-force attack, detected and classified CRITICAL, isolated only after a role-gated human approval.*
 
 ![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
 *Live overview: severity breakdown, alert volume, and guard activity computed from the real analysis log over an actual 24-hour window.*
