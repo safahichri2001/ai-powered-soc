@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
+from agent.analysis.alert_status_store import AlertStatusStore
 from agent.analysis.approval_policy import PolicyError
 from agent.analysis.live_alert_investigator import LiveAlertInvestigator
 from agent.analysis.soar_playbook import ProposedAction, execute_proposed_action
 from agent.integrations.wazuh_client import WazuhClientError, WazuhManagerClient
 from agent.tools.executor import ToolExecutor
-from api.dependencies import get_investigator, get_tool_executor
+from api.dependencies import get_alert_status_store, get_investigator, get_tool_executor
 from api.schemas import (
+    AlertStatusRequest,
     ApproveActionRequest,
     InvestigationResult,
     RejectActionRequest,
@@ -38,6 +41,7 @@ app = FastAPI(
 
 def _to_investigation_result(entry: dict[str, Any]) -> InvestigationResult:
     return InvestigationResult(
+        alert_id=(entry.get("raw_alert") or {}).get("id"),
         alert=entry.get("alert"),
         normalization_error=entry.get("normalization_error"),
         analysis=entry.get("analysis"),
@@ -105,13 +109,24 @@ def poll_new_alerts(
 @app.get("/analysis/log")
 def get_analysis_log(
     limit: int = 50,
+    since_hours: float | None = None,
     investigator: LiveAlertInvestigator = Depends(get_investigator),
 ) -> list[dict[str, Any]]:
     """
-    Returns the last `limit` entries from the persisted analysis
-    log (logs/alert_analysis_log.jsonl by default) -- history that
+    Returns entries from the persisted analysis log
+    (logs/alert_analysis_log.jsonl by default) -- history that
     survives across polls, unlike /alerts/recent or /alerts/poll
     which only ever reflect the current watermark position.
+
+    `limit` (last N lines) and `since_hours` (last N hours, by each
+    entry's own alert timestamp) are different things and were
+    previously conflated: a caller asking for "the last 24 hours"
+    via `limit=500` alone would silently undercount on a
+    high-volume day, once more than 500 lines had been written
+    within that window -- the oldest ones in range would already
+    have fallen off the tail. Pass `since_hours` for a real time
+    window; `limit` still applies afterwards as a sane upper bound,
+    not as the window itself.
     """
 
     path = investigator.analysis_log_path
@@ -121,7 +136,26 @@ def get_analysis_log(
 
     lines = path.read_text(encoding="utf-8").splitlines()
     entries = [json.loads(line) for line in lines if line.strip()]
+
+    if since_hours is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+        entries = [
+            entry
+            for entry in entries
+            if (parsed := _parse_timestamp(entry.get("timestamp")))
+            and parsed >= cutoff
+        ]
+
     return entries[-limit:]
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
 
 
 @app.post("/actions/approve", response_model=ToolExecutionResultOut)
@@ -153,6 +187,7 @@ def approve_action(
             approver_role=request.approver_role,
             confirmation_token=request.confirmation_token,
             justification=request.justification,
+            alert_id=request.alert_id,
         )
     except PolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -181,6 +216,7 @@ def reject_action(request: RejectActionRequest) -> dict[str, Any]:
         "risk_level": request.risk_level,
         "reviewed_by": request.reviewed_by,
         "justification": request.justification,
+        "alert_id": request.alert_id,
     }
 
     with DECISIONS_LOG_PATH.open("a", encoding="utf-8") as file:
@@ -213,6 +249,54 @@ def get_audit_log(
 
     entries.sort(key=lambda entry: entry["timestamp"], reverse=True)
     return entries[:limit]
+
+
+@app.get("/alerts/status")
+def get_alert_statuses(
+    store: AlertStatusStore = Depends(get_alert_status_store),
+) -> dict[str, Any]:
+    """
+    All analyst-set alert statuses (resolved/deleted), keyed by
+    alert_id. Wazuh has no concept of this -- it's purely dashboard
+    state layered on top, so the frontend fetches it separately and
+    filters resolved/deleted alerts out of its own view.
+    """
+
+    return store.get_all()
+
+
+@app.post("/alerts/{alert_id}/resolve")
+def resolve_alert(
+    alert_id: str,
+    request: AlertStatusRequest,
+    store: AlertStatusStore = Depends(get_alert_status_store),
+) -> dict[str, Any]:
+    """
+    Marks an alert reviewed and removes it from the main dashboard
+    view. Nothing about the alert, its analysis, or any audit/
+    decision log entry is touched -- purely a display-state flag,
+    reversible by an operator editing logs/alert_status.json.
+    """
+
+    return store.set_status(alert_id, "resolved", by=request.by)
+
+
+@app.post("/alerts/{alert_id}/delete")
+def delete_alert(
+    alert_id: str,
+    request: AlertStatusRequest,
+    store: AlertStatusStore = Depends(get_alert_status_store),
+) -> dict[str, Any]:
+    """
+    Permanently hides an alert from the dashboard. Despite the name,
+    this does not erase the underlying Wazuh alert or any audit/
+    decision log entry tied to it -- only the dashboard's own
+    display-state file is written to, so the audit trail this
+    project relies on for auditability is never at risk from this
+    endpoint.
+    """
+
+    return store.set_status(alert_id, "deleted", by=request.by)
 
 
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"

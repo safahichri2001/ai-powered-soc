@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 
+from agent.analysis.alert_status_store import AlertStatusStore
 from agent.analysis.live_alert_investigator import (
     LiveAlertInvestigator,
     build_alert_analysis_pipeline,
@@ -68,3 +69,17 @@ def get_tool_executor() -> ToolExecutor:
     """
 
     return get_investigator().tool_executor
+
+
+_alert_status_store = AlertStatusStore()
+
+
+def get_alert_status_store() -> AlertStatusStore:
+    """
+    Construction is cheap (just a path and a lock, no I/O until a
+    method is called), so unlike get_investigator() this needs no
+    lazy double-checked locking -- a single module-level instance is
+    enough.
+    """
+
+    return _alert_status_store

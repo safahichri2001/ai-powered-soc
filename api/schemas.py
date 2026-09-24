@@ -51,6 +51,7 @@ class InvestigationResult(BaseModel):
     field.
     """
 
+    alert_id: str | None = None
     alert: SecurityAlert | None
     normalization_error: str | None
     analysis: dict[str, Any] | None = None
@@ -75,6 +76,7 @@ class ApproveActionRequest(BaseModel):
     approver_role: str
     confirmation_token: str
     justification: str = ""
+    alert_id: str | None = None
 
 
 class RejectActionRequest(BaseModel):
@@ -91,6 +93,13 @@ class RejectActionRequest(BaseModel):
     risk_level: RiskLevel
     reviewed_by: str
     justification: str = ""
+    alert_id: str | None = None
+
+
+class AlertStatusRequest(BaseModel):
+    """Body of POST /alerts/{alert_id}/resolve and /delete."""
+
+    by: str
 
 
 class ToolExecutionResultOut(BaseModel):
