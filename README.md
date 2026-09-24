@@ -119,46 +119,35 @@ Screenshots from the live lab (real Wazuh alerts, real LLM analysis, real
 Active Response — no mocked data).
 
 ![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
-*Live overview: severity breakdown and alert volume computed from the real analysis log.*
+*Live overview: severity breakdown, alert volume, and guard activity computed from the real analysis log over an actual 24-hour window.*
 
-![CRITICAL alert before approval](docs/screenshots/02-critical-before-approval.png)
-*A real SSH brute-force alert classified CRITICAL, with its retrieved RAG context and the two SOAR-proposed actions awaiting human approval.*
+![CRITICAL alert reviewed and executed](docs/screenshots/02-critical-alert-executed.png)
+*A real SSH brute-force alert classified CRITICAL: retrieved RAG context above, the role-gated `WazuhIsolateAgent` action below — approved as `admin` and showing EXECUTED.*
 
-![CRITICAL alert executed](docs/screenshots/03-critical-executed.png)
-*After role-gated approval: the isolation action shows EXECUTED, with the AI threat assessment above it.*
+![Critical & High history](docs/screenshots/03-critical-high-history.png)
+*Every Critical/High alert seen this session in one place, each one's real outcome (or "Pending Approval") rather than an assumed one.*
 
 ![Recent decisions audit trail](docs/screenshots/04-recent-decisions.png)
 *The merged audit trail — who approved what, under which role, plus the automatic read-only enrichment lookups that never require approval.*
 
-![Prompt injection blocked](docs/screenshots/05-injection-blocked.png)
-*A live prompt-injection attempt (a malicious SSH username) caught by `input_guard` before it ever reached the LLM.*
+![Severity-filtered alert, correctly triaged](docs/screenshots/05-severity-filtered-alert.png)
+*Filtering to Medium: a routine login alert receiving a full AI assessment without over-reacting to it.*
 
 ## Decision engine and SOAR — how the agent stays out of the loop
 
 The LLM's job ends at producing a structured `ThreatAssessment` (threat
 type, `risk_level`, confidence, summary). It never decides what to *do*:
 
-```text
-ThreatAssessment.risk_level (validated enum)
-              |
-              v
-   build_response_plan()  <-- deterministic function; never reads the
-              |                LLM's free-text recommended_actions
-              v
-   ProposedAction (requires_approval=True, always)
-              |
-              v
-   Human reviews in the dashboard, picks a role, approves or rejects
-              |
-              v
-   check_approval()  <-- confirmation token bound to the action's exact
-              |            content; role must meet the risk level's
-              |            minimum (RBAC, agent/analysis/approval_policy.py)
-              v
-   ToolExecutor.run()  <-- ToolMisuseGuard evaluates the call independently;
-              |             an approved action is not exempt from it
-              v
-   Real effect (e.g. a genuine Wazuh Active Response) or BLOCKED
+```mermaid
+flowchart TD
+    A["ThreatAssessment.risk_level<br/>(validated enum)"] --> B["build_response_plan()<br/>deterministic — never reads the LLM's<br/>free-text recommended_actions"]
+    B --> C["ProposedAction<br/>requires_approval = True, always"]
+    C --> D["Human reviews in the dashboard<br/>picks a role, approves or rejects"]
+    D --> E["check_approval()<br/>confirmation token bound to exact content;<br/>role must meet the risk level's minimum (RBAC)"]
+    E --> F["ToolExecutor.run()<br/>ToolMisuseGuard evaluates independently —<br/>an approved action is not exempt"]
+    F --> G{"Guard decision"}
+    G -->|ALLOW| H["Real effect<br/>e.g. genuine Wazuh Active Response"]
+    G -->|BLOCK| I["BLOCKED"]
 ```
 
 This is a mitigation for what OWASP's LLM Top 10 calls **Excessive
@@ -171,71 +160,40 @@ is still blocked if `ToolMisuseGuard` rejects it.
 
 ## Architecture
 
-```text
-                         Windows 11 Host
-                              |
-                     VMware Workstation
-                              |
-              +---------------+---------------+
-              |                               |
-         VMnet8 (NAT)                    VMnet3
-          Internet                  10.0.0.0/24
-                                              |
-                              +---------------+---------------+
-                              |                               |
-                         SOC-Ubuntu                       Kali Linux
-                         10.0.0.10                       10.0.0.20
-                              |                               |
-                    +---------+---------+                     |
-                    |         |         |                     |
-                  Wazuh     Indexer   Dashboard           Wazuh Agent
-                 Manager     :9200      :443                 |
-                    |                                      |
-                    +--------------- Alerts ---------------+
+```mermaid
+flowchart TD
+    Host["Windows 11 Host"] --> VMware["VMware Workstation"]
+    VMware --> NAT["VMnet8 (NAT)<br/>Internet"]
+    VMware --> LAN["VMnet3<br/>10.0.0.0/24"]
+    LAN --> SOC["SOC-Ubuntu<br/>10.0.0.10"]
+    LAN --> Kali["Kali Linux<br/>10.0.0.20"]
+    SOC --> Manager["Wazuh Manager"]
+    SOC --> Indexer["Wazuh Indexer :9200"]
+    SOC --> Dashboard["Dashboard :443"]
+    Kali --> Agent["Wazuh Agent"]
+    Agent -.alerts.-> Manager
 ```
 
 ### Data flow (implemented, live-validated)
 
-```text
-Kali (attack) --> Wazuh Manager (detection) --> Wazuh Indexer (alert storage)
-                                                        |
-                                                        v
-                                        WazuhIndexerClient (retry + watermark)
-                                                        |
-                                                        v
-                                            normalize_wazuh_alert -> SecurityAlert
-                                                        |
-                                                        v
-                                    LiveAlertInvestigator: guarded enrichment
-                                    (ThreatIntelLookupIP / WazuhGetAgentInfo,
-                                     via ToolExecutor -> ToolMisuseGuard)
-                                                        |
-                                                        v
-                              RAGPipeline: InputGuard -> RAGContextGuard -> retrieval
-                                                        |
-                                                        v
-                                        Ollama LLM analysis, grounded in
-                                        retrieved knowledge + enrichment
-                                                        |
-                                                        v
-                                  ThreatAssessment (structured, validated)
-                                                        |
-                                                        v
-                          build_response_plan() -- deterministic SOAR proposal
-                                        (only for HIGH/CRITICAL risk_level)
-                                                        |
-                                                        v
-                           FastAPI (api/) + dashboard -- human reviews and
-                            approves/rejects (RBAC + confirmation token)
-                                                        |
-                                                        v
-                       ToolExecutor -> ToolMisuseGuard -> real Wazuh Active
-                        Response (e.g. WazuhIsolateAgent) or BLOCKED
-                                                        |
-                                                        v
-                   audit log (logs/alert_analysis_log.jsonl) + tool execution
-                     audit (logs/tool_execution_audit.jsonl) + analyst
-                       decisions (logs/analyst_decisions.jsonl)
+```mermaid
+flowchart TD
+    A["Kali (attack)"] --> B["Wazuh Manager (detection)"]
+    B --> C["Wazuh Indexer (alert storage)"]
+    C --> D["WazuhIndexerClient<br/>retry + watermark, thread-safe against<br/>concurrent pollers"]
+    D --> E["normalize_wazuh_alert() → SecurityAlert"]
+    E --> F["LiveAlertInvestigator: guarded enrichment<br/>(ThreatIntelLookupIP / WazuhGetAgentInfo<br/>via ToolExecutor → ToolMisuseGuard)"]
+    F --> G["RAGPipeline: InputGuard → RAGContextGuard → retrieval"]
+    G --> H["Ollama LLM analysis<br/>grounded in retrieved knowledge + enrichment"]
+    H --> I["ThreatAssessment (structured, validated)"]
+    I --> J["build_response_plan()<br/>deterministic SOAR proposal<br/>(only for HIGH/CRITICAL risk_level)"]
+    J --> K["FastAPI + dashboard<br/>human reviews, approves/rejects<br/>(RBAC + confirmation token)"]
+    K --> L["ToolExecutor → ToolMisuseGuard"]
+    L --> M{"Guard decision"}
+    M -->|ALLOW| N["Real Wazuh Active Response<br/>e.g. WazuhIsolateAgent"]
+    M -->|BLOCK| O["BLOCKED"]
+    N --> P["Audit trail:<br/>alert_analysis_log.jsonl · tool_execution_audit.jsonl ·<br/>analyst_decisions.jsonl"]
+    O --> P
 ```
 
 ## Laboratory Environment
@@ -380,7 +338,13 @@ log collection, Rootcheck).
       brute-force escalated to a real, human-approved, real Active Response
       isolation; a real prompt-injection attempt and a RAG-poisoning attempt
       each caught live by their respective guards
-* [x] 174 automated tests (`pytest -q`)
+* [x] 177 automated tests (`pytest -q`)
+* [x] Master/detail alert triage UI (severity-filtered list + detail pane),
+      a Critical/High history view, and an in-browser critical-alert
+      notification (sound + toast) driven by real poll results
+* [x] Analyst-facing alert lifecycle (Resolve/Delete) backed by its own
+      persisted status store — never mutates the underlying alert, analysis
+      log, or audit/decision trail
 
 ### In Progress / Planned
 
