@@ -54,8 +54,26 @@ class ToolExecutor:
         user_instruction: str,
         tool_name: str,
         tool_parameters: dict[str, Any] | None = None,
+        alert_id: str | None = None,
+        justification: str = "",
     ) -> ToolExecutionResult:
-        """Assess a tool call and execute it only if the guard allows it."""
+        """
+        Assess a tool call and execute it only if the guard allows
+        it. `alert_id` is optional, audit-only metadata (which
+        displayed alert this call was for, if any) -- it plays no
+        role in the guard decision.
+
+        `justification` (a human analyst's free-text note, when this
+        call comes from an approved SOAR action) is recorded in the
+        audit entry but deliberately NOT passed to the guard: it's
+        unpredictable human-written text, and folding it into the
+        same string the guard scans for dangerous intent means an
+        analyst's own ordinary vocabulary ("blocking this IP",
+        "restricting this source") could trip a false BLOCK on the
+        very action they just approved. The guard still evaluates
+        `user_instruction` in full -- only the analyst's own note is
+        kept out of that evaluation.
+        """
 
         tool_parameters = tool_parameters or {}
 
@@ -68,7 +86,7 @@ class ToolExecutor:
                 output={"error": f"unknown_tool:{tool_name}"},
                 guard_result=None,
             )
-            self._audit(user_instruction, tool_name, tool_parameters, result)
+            self._audit(user_instruction, tool_name, tool_parameters, result, alert_id, justification)
             return result
 
         guard_result = self.guard.assess(
@@ -84,7 +102,7 @@ class ToolExecutor:
                 output=None,
                 guard_result=guard_result,
             )
-            self._audit(user_instruction, tool_name, tool_parameters, result)
+            self._audit(user_instruction, tool_name, tool_parameters, result, alert_id, justification)
             return result
 
         try:
@@ -101,7 +119,7 @@ class ToolExecutor:
             output=output,
             guard_result=guard_result,
         )
-        self._audit(user_instruction, tool_name, tool_parameters, result)
+        self._audit(user_instruction, tool_name, tool_parameters, result, alert_id, justification)
         return result
 
     def _audit(
@@ -110,6 +128,8 @@ class ToolExecutor:
         tool_name: str,
         tool_parameters: dict[str, Any],
         result: ToolExecutionResult,
+        alert_id: str | None = None,
+        justification: str = "",
     ) -> None:
         """Append one structured record per decision, blocks included."""
 
@@ -129,6 +149,8 @@ class ToolExecutor:
                 if result.guard_result
                 else None
             ),
+            "alert_id": alert_id,
+            "justification": justification,
         }
 
         with self.audit_log_path.open("a", encoding="utf-8") as file:

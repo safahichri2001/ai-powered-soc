@@ -77,7 +77,8 @@ def build_response_plan(
                     reason=(
                         f"{threat_assessment.risk_level} risk "
                         f"({threat_assessment.threat_type}) from "
-                        f"{alert.source_ip} -- block source."
+                        f"{alert.source_ip} -- add source to network "
+                        f"denylist."
                     ),
                     risk_level=threat_assessment.risk_level,
                 )
@@ -93,6 +94,7 @@ def execute_proposed_action(
     approver_role: str,
     confirmation_token: str,
     justification: str = "",
+    alert_id: str | None = None,
 ) -> ToolExecutionResult:
     """
     Execute a proposed action a human has explicitly approved.
@@ -115,12 +117,12 @@ def execute_proposed_action(
 
     check_approval(action, approver_role, confirmation_token)
 
-    note = f" -- analyst note: {justification}" if justification else ""
-
     return tool_executor.run(
         user_instruction=(
-            f"[Approved by {approved_by} ({approver_role})] {action.reason}{note}"
+            f"[Approved by {approved_by} ({approver_role})] {action.reason}"
         ),
         tool_name=action.tool_name,
         tool_parameters=action.tool_parameters,
+        alert_id=alert_id,
+        justification=justification,
     )
